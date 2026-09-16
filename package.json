@@ -9,9 +9,11 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/three": "^0.160.0",
+    "@vitejs/plugin-legacy": "^8.2.3",
+    "terser": "^5.51.2",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2",
-    "@types/three": "^0.160.0"
+    "vite": "^8.2.2"
   },
   "description": "Saphira - local anime companion, Gemini flash-lite + Web Speech",
   "dependencies": {

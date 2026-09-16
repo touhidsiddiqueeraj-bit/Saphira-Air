@@ -362,7 +362,9 @@ export class SaphiraAvatar {
             for(const t of (c as any).tracks) this.animated.add(String(t.name).split('.').slice(0,-1).join('.'));
           }
           const w = this.acts.get('wander') ?? this.acts.get('walk');
-          if(w) this.walkSpeed = Math.max(0.35, Math.min(1.1, (w.getClip().duration||1)*0.3));
+          // ponytail: slower/longer stride — was 0.3× (≈3.7→capped 1.1), now 0.12× (≈1.5→0.65) + slowed timeScale
+          if(w) this.walkSpeed = Math.max(0.28, Math.min(0.65, (w.getClip().duration||1)*0.12));
+          for(const k of ['wander','walk']){ const a=this.acts.get(k); if(a) a.timeScale = this.isLegacy ? 0.62 : 0.78; }
         }
       }catch{ this.mixer=null; }
       // rig hooks for head tracking / blinking / breathing
@@ -394,8 +396,10 @@ export class SaphiraAvatar {
         const pct=Math.round(e.loaded/e.total*100);
         window.dispatchEvent(new CustomEvent('saphira:load', {detail:{pct}}));
       }
-    }, ()=>{
-      window.dispatchEvent(new CustomEvent('saphira:load', {detail:{pct:100, error:true}}));
+    }, (err:any)=>{
+      const msg=(err?.message||err?.target?.statusText||String(err||'load failed')).slice(0,120);
+      console.error('[Saphira] model load failed', err);
+      window.dispatchEvent(new CustomEvent('saphira:load', {detail:{pct:100, error:true, message:msg}}));
     });
   }
 
@@ -435,13 +439,13 @@ export class SaphiraAvatar {
     if(document.hidden){ this.scheduleLife(9000); return; }
     const idle = this.wanderMode==='none' && !this.busy && !this.talking;
     if(idle){
-      // autonomous life only: wander / glance / tilt. Never dance/laugh/angry on its own.
-      // tuned for more roaming: shorter interval + higher wander chance
       const r=Math.random();
-      if(r<0.78){ this.startWander(); }
-      else if(r<0.90){ this.startGlance(); }
+      // wander slower/longer, plus periodic Mixamo waves
+      if(r<0.62){ this.startWander(); }
+      else if(r<0.80){ this.playOnce('wave_small'); }
+      else if(r<0.92){ this.playOnce('wave'); }
+      else if(r<0.96){ this.startGlance(); }
       else {
-        // little head tilt for variety
         this.tiltAmt = (Math.random()<0.5?-1:1)*0.09;
         this.tiltUntil = performance.now()/1000 + 2.2 + Math.random()*1.5;
       }

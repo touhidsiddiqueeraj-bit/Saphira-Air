@@ -153,7 +153,12 @@ function wire(){
   document.getElementById('taskAddBtn')!.addEventListener('click', taskAdd);
   document.getElementById('taskInput')!.addEventListener('keydown', e=>{ if(e.key==='Enter') taskAdd(); });
   window.addEventListener('saphira:load', (e:any)=>{
-    if(e.detail?.error) addBubble('bot','3D model failed to load.');
+    if(e.detail?.error){
+      const m=e.detail?.message ? ` (${String(e.detail.message).slice(0,60)})` : '';
+      addBubble('bot',`3D model failed to load${m} — hard-refresh or check /model/ai_ohto.glb`);
+      flashLive(`Model load failed${m}`);
+      console.error('[Saphira] load event', e.detail);
+    }
   });
   tts = new SaphiraVoice((s)=>{
     avatar?.setTalking(s==='speaking');
