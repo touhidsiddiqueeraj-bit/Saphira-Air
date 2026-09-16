@@ -15,9 +15,9 @@ button{font:inherit}
 .gear:hover{transform:scale(1.04)}
 .gear:active{transform:scale(0.98)}
 .gear svg{width:18px;height:18px}
-.clock{position:absolute;top:14px;right:66px;z-index:20;display:flex;align-items:baseline;gap:10px;padding:12px 18px;border-radius:999px;border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.86);backdrop-filter:blur(10px);box-shadow:0 4px 18px rgba(0,0,0,0.08);color:#1a1a1e}
-#clockTime{font-family:"Fragment Mono",monospace;font-size:17px;font-weight:700;letter-spacing:-0.02em}
-#clockDate{font-size:13px;opacity:0.6}
+.clock{position:absolute;top:14px;right:66px;z-index:20;display:flex;align-items:baseline;gap:14px;padding:20px 32px;border-radius:28px;border:1px solid rgba(0,0,0,0.08);background:rgba(255,255,255,0.86);backdrop-filter:blur(10px);box-shadow:0 4px 18px rgba(0,0,0,0.08);color:#1a1a1e}
+#clockTime{font-family:"Fragment Mono",monospace;font-size:38px;font-weight:700;letter-spacing:-0.02em;line-height:1}
+#clockDate{font-size:20px;opacity:0.6}
 html[data-theme="night"] .clock{background:rgba(30,32,40,0.9);border-color:rgba(255,255,255,0.12);color:#ece9e3}
 
 /* task tracker (left) */

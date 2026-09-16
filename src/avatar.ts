@@ -79,6 +79,9 @@ export class SaphiraAvatar {
   private headBone: THREE.Object3D | null = null;
   private neckBone: THREE.Object3D | null = null;
   private spineBone: THREE.Object3D | null = null;
+  private hipsBone: THREE.Object3D | null = null;
+  private hipsBindY = 0;
+  private hipsTmp = new THREE.Vector3();
   private lidBone: THREE.Object3D | null = null;
   private animated = new Set<string>(); // node names driven by baked clips
   private headBaseQ = new THREE.Quaternion();
@@ -366,6 +369,7 @@ export class SaphiraAvatar {
           if(w) this.walkSpeed = this.isLegacy ? 0.30 : 0.36;
           for(const k of ['wander','walk']){ const a=this.acts.get(k); if(a) a.timeScale = this.isLegacy ? 0.55 : 0.7; }
           const yw=this.acts.get('yawn'); if(yw) yw.timeScale = 0.95;
+          const rs=this.acts.get('raise'); if(rs) rs.timeScale = 1.0;
         }
       }catch{ this.mixer=null; }
       // rig hooks for head tracking / blinking / breathing
@@ -377,6 +381,15 @@ export class SaphiraAvatar {
       this.headBone = findBone(['mixamorig:Head','Head','head']) ?? null;
       this.neckBone = findBone(['mixamorig:Neck','Neck','neck']) ?? null;
       this.spineBone = findBone(['mixamorig:Spine','mixamorig:Spine1','Spine','spine']) ?? null;
+      this.hipsBone = findBone(['mixamorig:Hips','Hips','hips']) ?? null;
+      // bind-pose hips world Y — walk/wander clips bob Hips below bind, which
+      // pushed feet through the ground. We lift by the dip each frame (see animate).
+      if(this.hipsBone){
+        try{
+          this.model.updateMatrixWorld(true);
+          this.hipsBindY = this.hipsBone.getWorldPosition(new THREE.Vector3()).y;
+        }catch{ this.hipsBindY = 0; }
+      }
       this.lidBone = findBone(['lid','mixamorig:HeadTop_End']) ?? null;
       // lid on Mixamo is just a tip bone — don't use it for blinking if it's not a lid
       if(this.lidBone && this.lidBone.name.includes('HeadTop')) this.lidBone=null;
@@ -441,12 +454,12 @@ export class SaphiraAvatar {
     const idle = this.wanderMode==='none' && !this.busy && !this.talking;
     if(idle){
       const r=Math.random();
-      // walks + waves + yawns, all Mixamo. Yawn needs idle or it clips the stride.
-      if(r<0.52){ this.startWander(); }
-      else if(r<0.66){ this.playOnce('wave_small'); }
-      else if(r<0.76){ this.playOnce('wave'); }
-      else if(r<0.90){ this.playOnce('yawn'); }
-      else if(r<0.95){ this.startGlance(); }
+      // walks + hand raises + yawns, all Mixamo. Dance/laugh (wave/wave_small)
+      // never play on their own — only on explicit chat request via playGest.
+      if(r<0.50){ this.startWander(); }
+      else if(r<0.70){ this.playOnce('raise'); }
+      else if(r<0.88){ this.playOnce('yawn'); }
+      else if(r<0.94){ this.startGlance(); }
       else {
         this.tiltAmt = (Math.random()<0.5?-1:1)*0.09;
         this.tiltUntil = performance.now()/1000 + 2.2 + Math.random()*1.5;
@@ -596,6 +609,14 @@ export class SaphiraAvatar {
       this.root.rotation.x = this.lookY*0.04;
     }
     if(this.mixer) this.mixer.update(dt);
+    // keep feet on the floor: if the baked clip dipped Hips below bind, lift back up
+    if(this.model && this.hipsBone && this.hipsBindY>0){
+      try{
+        this.hipsBone.getWorldPosition(this.hipsTmp);
+        const dip = this.hipsTmp.y - this.hipsBindY;
+        if(dip < -0.005) this.model.position.y = this.baseY + Math.min(-dip, 0.18);
+      }catch{}
+    }
     this.applyLife(dt);
     // wandering: walk to target, then turn back to face the user
     if(this.model && this.wanderMode!=='none'){
