@@ -4,7 +4,9 @@ Same Saphira. Now runs on a 2013 iPad Air.
 
 > Main build targets modern browsers. **Air** is the same character, same animations, same chat — tuned so iOS 12 / Safari 12 / WebGL 1 / 1GB RAM doesn't fall over. No separate lite model, no stripped features — just graceful degradation where the hardware demands it.
 
-![Saphira](docs/screenshot.png)
+![Saphira idle](docs/screenshot.png)
+![Saphira dancing](docs/screenshot-dance.png)
+![Saphira talking close-up](docs/screenshot-face.png)
 
 **Live demo:** deploy this repo to Vercel (see below) → open on the Air over HTTPS.
 
@@ -26,7 +28,7 @@ Single adaptive build — modern iPads get 100%, the Air auto-switches via `html
 | Audio | `AudioContext({24000})` | `webkitAudioContext` + 44100 fallback, resamples PCM | `src/aiVoice.ts:53` |
 | Voice-in | continuous wake word (`hey saphira`) | tap-to-talk only — iOS Safari never shipped `SpeechRecognition` | `src/speech.ts:28`, `src/main.ts:20-34` |
 
-Kept: same `public/model/ai_ohto.glb` (5.1MB), all 7 clips (`idle`/`talk`/`wander`/`walk`/`wave`/`nod`/`wave_small`), wandering, head-track, blink, breathing, face-zoom, tasks, day/night, Gemini chat + TTS.
+Kept: same `public/model/ai_ohto.glb` (5.1MB), all 9 clips (`idle`/`talk`/`wander`/`walk`/`wave`/`wave_small`/`nod`/`raise`/`yawn`), foot-clamp grounding + Hips pin (every clip plays planted on the disc), wandering, head-track, random gaze on touch, blink, breathing, face-zoom, tasks (bottom right), day/night, Gemini chat + TTS.
 
 ## Quick start
 
