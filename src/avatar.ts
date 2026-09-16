@@ -5,7 +5,7 @@ export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg4';
+export const BUILD = 'air-dbg5';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -58,6 +58,9 @@ export class SaphiraAvatar {
   };
   private talking=false;
   private lookX=0; private lookY=0;
+  // ponytail: no pointer on iPad — random gaze targets keep her looking around
+  // like she follows the mouse on desktop; desktop joins in after 4s idle
+  private lastPointer=0; private gazeX=0; private gazeY=0; private gazeUntil=0;
   private baseY=0;
   private modelH=2.2;
   private headY=1.9;
@@ -155,6 +158,7 @@ export class SaphiraAvatar {
       const r=canvas.getBoundingClientRect();
       this.lookX = ((e.clientX - r.left)/r.width -0.5)*1.0;
       this.lookY = ((e.clientY - r.top)/r.height -0.5)*0.55;
+      this.lastPointer = performance.now()/1000;
     });
     this.animate();
   }
@@ -445,7 +449,7 @@ export class SaphiraAvatar {
     const usable=0.74;
     const distV=(H/2)/(vTan*usable);
     const distH=(W/2)/(vTan*aspect);
-    const dist=Math.max(distV,distH)*1.12;
+    const dist=Math.max(distV,distH)*1.0;
     const cy=H*0.52; // look slightly above middle so feet clear the dock
     this.homePos.set(0, cy+0.06, dist);
     this.homeLook.set(0, cy, 0);
@@ -576,6 +580,18 @@ export class SaphiraAvatar {
     if(!this.model) return;
     this.breathT += dt;
     const nowS = performance.now()/1000;
+    // no mouse lately (always true on touch) — drift the gaze between random
+    // screen points instead of staring dead ahead
+    if(nowS - this.lastPointer > 4){
+      if(nowS > this.gazeUntil){
+        this.gazeX = (Math.random()*2-1)*0.5;
+        this.gazeY = (Math.random()*2-1)*0.28;
+        this.gazeUntil = nowS + 1.8 + Math.random()*2.5;
+      }
+      const gk = 1 - Math.exp(-1.8*dt);
+      this.lookX += (this.gazeX - this.lookX)*gk;
+      this.lookY += (this.gazeY - this.lookY)*gk;
+    }
     const k = 1 - Math.exp(-6*dt);
     const gYaw = THREE.MathUtils.clamp(this.lookX*1.1, -0.55, 0.55) + (nowS<this.glanceUntil ? this.glanceYaw : 0);
     const gPitch = THREE.MathUtils.clamp(-this.lookY*0.9, -0.35, 0.3);
