@@ -1,0 +1,20 @@
+{
+  "name": "saphira",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2",
+    "@types/three": "^0.160.0"
+  },
+  "description": "Saphira - local anime companion, Gemini flash-lite + Web Speech",
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}
