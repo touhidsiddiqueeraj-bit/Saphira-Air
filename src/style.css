@@ -119,6 +119,8 @@ html[data-theme="night"] .livepill{background:rgba(236,233,227,0.94);color:#111}
   .gear,.drawer-panel,.bubble,.input-pill{backdrop-filter:none}
   .stage::after{background:transparent}
 }
+/* ponytail: ?debug=1 overlay — tiny, pointer-transparent, only with the query flag */
+.dbg{position:absolute;top:64px;left:14px;z-index:50;max-width:min(92vw,700px);padding:8px 12px;border-radius:10px;background:rgba(0,0,0,0.72);color:#fff;font-family:ui-monospace,monospace;font-size:12px;line-height:1.5;pointer-events:none;white-space:pre-wrap;word-break:break-word}
 /* ponytail: iPad Air 1 chokes on backdrop-filter — force flat fallback via JS class too */
 html.legacy .gear,html.legacy .drawer-panel,html.legacy .bubble,html.legacy .input-pill,html.legacy .clock,html.legacy .tasks{backdrop-filter:none !important; -webkit-backdrop-filter:none !important}
 html.legacy .stage::after{background:transparent !important}

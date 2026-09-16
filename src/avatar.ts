@@ -4,6 +4,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking'|'annoyed'|'blush';
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
+// bump on every push — shown in ?debug=1 overlay so screenshots prove the build
+export const BUILD = 'air-dbg3';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -86,6 +88,7 @@ export class SaphiraAvatar {
   private footBones: THREE.Object3D[] = [];
   private footBindY: number[] = [];
   private footTmp = new THREE.Vector3();
+  private lastLift = 0;
   private lidBone: THREE.Object3D | null = null;
   private animated = new Set<string>(); // node names driven by baked clips
   private headBaseQ = new THREE.Quaternion();
@@ -383,7 +386,13 @@ export class SaphiraAvatar {
       // Mixamo skeleton uses mixamorig:Head/Neck/Spine; custom rig used head/neck/spine/lid
       const findBone = (names: string[])=>{
         for(const n of names){ const b=obj.getObjectByName(n); if(b) return b as THREE.Object3D; }
-        return null;
+        // GLTFLoader strips ':' from node names (mixamorig:Hips -> mixamorigHips),
+        // so fall back to a colon-insensitive + case-insensitive match
+        const norm = (s:string)=> String(s).toLowerCase().replace(/:/g,'');
+        const want = new Set(names.map(norm));
+        let found: THREE.Object3D | null = null;
+        obj.traverse((o:any)=>{ if(!found && o.name && want.has(norm(o.name))) found=o as THREE.Object3D; });
+        return found;
       };
       this.headBone = findBone(['mixamorig:Head','Head','head']) ?? null;
       this.neckBone = findBone(['mixamorig:Neck','Neck','neck']) ?? null;
@@ -521,6 +530,12 @@ export class SaphiraAvatar {
   // expose for UI debug / manual triggers
   playGest(name: string){ this.playOnce(name); }
   listGestures(){ return [...this.acts.keys()]; }
+  // one-line state for the ?debug=1 overlay
+  debugInfo(){
+    const my = this.model ? this.model.position.y.toFixed(2) : 'no-model';
+    const one = this.oneShot ? (this.oneShot.getClip().name) : '-';
+    return `build ${BUILD} | acts [${[...this.acts.keys()].join(',')}] | feet ${this.footBones.length} lift ${this.lastLift.toFixed(2)} y ${my} baseY ${this.baseY.toFixed(2)} mode ${this.wanderMode} one:${one}${this.talking?'/talking':''}`;
+  }
   get busy(){ return this.oneShot!==null; }
   setTalking(on:boolean){
     this.talking=on;
@@ -641,7 +656,10 @@ export class SaphiraAvatar {
           if(need > lift) lift = need;
         }
         this.model.position.y = this.baseY + Math.max(0, Math.min(lift, 3.0));
+        this.lastLift = Math.max(0, Math.min(lift, 3.0));
       }catch{}
+    } else if(this.model){
+      this.lastLift = -1; // clamp inactive (bones missing) — visible in ?debug=1
     }
     this.applyLife(dt);
     // wandering: walk to target, then turn back to face the user

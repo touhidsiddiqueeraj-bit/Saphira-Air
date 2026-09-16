@@ -1,5 +1,5 @@
 import './style.css';
-import { SaphiraAvatar } from './avatar';
+import { SaphiraAvatar, BUILD } from './avatar';
 import { GeminiClient } from './gemini';
 import { SaphiraVoice, AI_VOICES } from './aiVoice';
 import { WakeListener } from './speech';
@@ -73,6 +73,7 @@ function renderApp(){
     <div class="stage">
       <canvas id="c" aria-label="Saphira canvas"></canvas>
       <button class="theme" id="themeBtn" aria-label="Toggle day / night">◐</button>
+      <div class="dbg" id="dbg" style="display:none"></div>
       <div class="clock" id="clock" aria-label="Clock"><span id="clockTime">--:--</span><span id="clockDate"></span></div>
       <button class="gear" id="gear" aria-label="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 9 15a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0 1-1.51V7a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 15 12c0 .73.4 1.38 1 1.51.2.06.41.1.6.09Z"/></svg>
@@ -146,6 +147,19 @@ function wire(){
     if(dt) dt.textContent=d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'});
   };
   tickClock(); window.setInterval(tickClock, 5000);
+  // ?debug=1 overlay — proves which build is deployed + live grounding state
+  try{
+    if(new URLSearchParams(location.search).has('debug')){
+      const dbg=document.getElementById('dbg') as HTMLElement;
+      if(dbg){
+        dbg.style.display='block';
+        dbg.textContent=`build ${BUILD} loading…`;
+        window.setInterval(()=>{
+          try{ dbg.textContent = avatar ? avatar.debugInfo() : `build ${BUILD} no-avatar`; }catch(e){ dbg.textContent=`build ${BUILD} err`; }
+        }, 500);
+      }
+    }
+  }catch{}
   // task tracker (left)
   renderTasks();
   if(window.matchMedia('(max-width: 768px)').matches) document.getElementById('tasksPanel')!.classList.add('collapsed');
