@@ -7,6 +7,7 @@ export type Settings = {
   aiVoice: string;
   rate: number;   // speech rate
   rpmLimit: number;
+  chatter: boolean; // idle voice lines every 15 min
 };
 
 const LS_KEY = 'saphira_settings_v2';
@@ -46,6 +47,7 @@ function defaults(): Settings {
     aiVoice: 'Sulafat',
     rate: 1.0,
     rpmLimit: 12,
+    chatter: true,
   };
 }
 export function saveSettings(s: Settings){

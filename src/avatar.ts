@@ -15,8 +15,9 @@ const NIGHT_GROUND = new THREE.Color('#1d1f26');
 const DAY_KEY = new THREE.Color('#fff6ee');
 const NIGHT_KEY = new THREE.Color('#9fb4ff');
 
-// wander targets stay inside the camera frame (ground disc r=1.1)
+// wander targets stay on the ground disc (r=1.7) and inside the camera frame
 const WANDER_X = 1.05, WANDER_Z_MIN = -0.35, WANDER_Z_MAX = 0.65;
+const WANDER_R = 0.95; // max radius from stage center — keeps feet on the disc
 
 // expression -> mood glow color (null = no tint, just the theme light)
 const MOODS: Record<Expression, string | null> = {
@@ -69,6 +70,7 @@ export class SaphiraAvatar {
   private baseBg = new THREE.Color('#ece9e3'); // theme bg before mood tint
   private ground!: THREE.Mesh;
   private groundMat!: THREE.MeshStandardMaterial;
+  private shadow!: THREE.Mesh;
   private canvas: HTMLCanvasElement;
   private theme: Theme = (localStorage.getItem('saphira_theme') as Theme) || 'auto';
   private blend = 0; // 0 = day, 1 = night
@@ -216,7 +218,9 @@ export class SaphiraAvatar {
     // ponytail: 32/28 segs is overkill on A7 — 20 segs looks same at distance
     const segs = this.isLegacy ? 20 : 32;
     const shSegs = this.isLegacy ? 16 : 28;
-    const g = new THREE.CircleGeometry(1.1, segs);
+    // ponytail: disc r=1.7 — wander corners (±1.05, 0.65) walked off the old r=1.1
+    // disc and she read as sunk below the floor
+    const g = new THREE.CircleGeometry(1.7, segs);
     this.groundMat = new THREE.MeshStandardMaterial({ color:0xe8e5df, roughness:0.95 });
     this.ground = new THREE.Mesh(g, this.groundMat);
     this.ground.rotation.x = -Math.PI/2;
@@ -224,6 +228,7 @@ export class SaphiraAvatar {
     this.scene.add(this.ground);
     const sh = new THREE.Mesh(new THREE.CircleGeometry(0.55, shSegs), new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.09 }));
     sh.rotation.x = -Math.PI/2; sh.position.y = 0.005; this.scene.add(sh);
+    this.shadow = sh;
   }
 
   // bind-pose bounds measured from base positions — Box3.setFromObject
@@ -481,6 +486,9 @@ export class SaphiraAvatar {
       tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
     }
     if(Math.hypot(tx-p.x, tz-p.z) < 0.6) tx = -tx; // too close — go the other way
+    // clamp onto the disc so she never steps off the edge
+    const tr = Math.hypot(tx, tz);
+    if(tr > WANDER_R){ tx *= WANDER_R/tr; tz *= WANDER_R/tr; }
     this.wanderTarget.set(tx, 0, tz);
     const a=this.acts.get('wander') ?? this.acts.get('walk');
     if(!a) return;
@@ -605,6 +613,8 @@ export class SaphiraAvatar {
     const t=this.clock.elapsedTime;
     if(this.model){
       this.model.position.y = this.baseY;
+      // shadow travels with her — a static shadow left behind read as sinking
+      if(this.shadow){ this.shadow.position.x = this.model.position.x; this.shadow.position.z = this.model.position.z; }
       this.root.rotation.y = Math.sin(t*0.18)*0.05 + this.lookX*0.10;
       this.root.rotation.x = this.lookY*0.04;
     }

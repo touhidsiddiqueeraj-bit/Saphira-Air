@@ -114,6 +114,7 @@ function renderApp(){
         <label class="field"><span>AI voice</span><select id="aiVoice"></select></label>
         <div class="field"><span>Rate</span><div class="row"><input id="rate" type="range" min="0.7" max="1.3" step="0.05" style="flex:1"/></div></div>
         <label class="field"><span>Mic</span><select id="micEnabled"><option value="no">Off</option><option value="yes">On</option></select></label>
+        <label class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up every 15 min</small></span><select id="chatterEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
         <div class="row">
           <button class="btn primary" id="saveBtn">Save</button>
           <button class="btn" id="testBtn">Test voice</button>
@@ -215,6 +216,8 @@ function wire(){
   (document.getElementById('wakeWord') as HTMLInputElement).value = settings.wakeWord;
   (document.getElementById('persona') as HTMLTextAreaElement).value = settings.persona;
   (document.getElementById('rate') as HTMLInputElement).value = String(settings.rate);
+  (document.getElementById('chatterEnabled') as HTMLSelectElement).value = settings.chatter===false?'no':'yes';
+  startChatter();
   const aiSel=document.getElementById('aiVoice') as HTMLSelectElement;
   aiSel.innerHTML='';
   AI_VOICES.forEach(v=>{
@@ -300,8 +303,10 @@ function save(){
   const aiVoice=(document.getElementById('aiVoice') as HTMLSelectElement).value || settings.aiVoice;
   const rate=parseFloat((document.getElementById('rate') as HTMLInputElement).value);
   const micOn=(document.getElementById('micEnabled') as HTMLSelectElement).value==='yes';
-  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate;
+  const chatter=(document.getElementById('chatterEnabled') as HTMLSelectElement).value!=='no';
+  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.chatter=chatter;
   saveSettings(settings);
+  startChatter();
   tts.setAiVoice(aiVoice); tts.setRate(rate);
   gemini.setRpm(settings.rpmLimit);
   wake.setWakeWord(wakeWord);
@@ -322,6 +327,43 @@ function updateMic(){
   }
   const input=document.getElementById('chatInput') as HTMLInputElement;
   if(input) input.placeholder = !wake.isSupported ? 'Type a message' : isLegacyIOS ? 'Tap mic or type' : `Say “${settings.wakeWord}” or type`;
+}
+// ponytail: idle chatter — 10 pre-baked lines, zero network except the TTS
+// voice she already uses. One utterance per 15 min, Air-safe.
+const VOICELINES = [
+  "Hey there! Did you miss me, or are you just ignoring me on purpose?",
+  "Boop! Just checking in to make sure you're still alive out there.",
+  "Hello, hello! Your favorite digital companion has arrived to brighten your screen!",
+  "What are we working on now? World domination? Or just boring adult stuff?",
+  "My internal clock says it's been way too quiet. Talk to me!",
+  "Just a friendly reminder that you promised to spend time with me today.",
+  "Are you staring at code again? Blinking is free, you know!",
+  "Hiya! If you get bored, I know at least three ways to waste time productively.",
+  "Checking in! On a scale of one to stressed, how's your day going?",
+  "Surprise! I'm still right here living in your tablet, cheering you on.",
+];
+const CHATTER_MS = 15*60*1000;
+let chatterTimer: number | null = null;
+let lastChatter = -1;
+function startChatter(){
+  if(chatterTimer) window.clearInterval(chatterTimer);
+  chatterTimer = null;
+  if(settings.chatter===false) return;
+  chatterTimer = window.setInterval(chatterTick, CHATTER_MS);
+}
+async function chatterTick(){
+  if(settings.chatter===false || document.hidden || isThinking) return;
+  if(tts.speaking) return; // she (or a reply) is already talking — skip this round
+  let i = Math.floor(Math.random()*VOICELINES.length);
+  if(i===lastChatter) i = (i+1)%VOICELINES.length;
+  lastChatter = i;
+  const line = VOICELINES[i];
+  lastInteract = Date.now();
+  addBubble('bot', line);
+  avatar?.setExpression('happy', 0.6);
+  avatar?.setTalking(true);
+  const heard = await tts.speak(line);
+  if(!heard) window.setTimeout(()=>{ avatar?.setTalking(false); }, Math.min(6000, 1400+line.length*55));
 }
 let liveTimer: number | null = null;
 let voiceWarned=false;
