@@ -7,7 +7,8 @@ export type Settings = {
   aiVoice: string;
   rate: number;   // speech rate
   rpmLimit: number;
-  chatter: boolean; // idle voice lines every 15 min
+  chatter: boolean; // idle voice lines
+  chatterMinutes: number; // idle chatter interval in minutes
 };
 
 const LS_KEY = 'saphira_settings_v2';
@@ -30,6 +31,8 @@ export function loadSettings(): Settings {
       const s = { ...defaults(), ...j };
       // migrate stored personas from before the task list existed
       if(typeof s.persona==='string' && !s.persona.includes('"tasks"')) s.persona=(s.persona+TASKS_SUFFIX).slice(0,900);
+      // ponytail: clamp chatter interval, old saves lack the field
+      s.chatterMinutes = Math.min(120, Math.max(1, Number(s.chatterMinutes) || 15));
       return s;
     }
   }catch{}
@@ -48,6 +51,7 @@ function defaults(): Settings {
     rate: 1.0,
     rpmLimit: 12,
     chatter: true,
+    chatterMinutes: 15,
   };
 }
 export function saveSettings(s: Settings){

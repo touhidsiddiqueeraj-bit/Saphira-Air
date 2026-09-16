@@ -115,7 +115,7 @@ function renderApp(){
         <label class="field"><span>AI voice</span><select id="aiVoice"></select></label>
         <div class="field"><span>Rate</span><div class="row"><input id="rate" type="range" min="0.7" max="1.3" step="0.05" style="flex:1"/></div></div>
         <label class="field"><span>Mic</span><select id="micEnabled"><option value="no">Off</option><option value="yes">On</option></select></label>
-        <label class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up every 15 min</small></span><select id="chatterEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
+        <div class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up on a timer</small></span><div class="row" style="display:flex;gap:8px"><select id="chatterEnabled" style="flex:1"><option value="yes">On</option><option value="no">Off</option></select><input id="chatterMinutes" type="number" min="1" max="120" step="1" title="Minutes between lines" style="width:84px;flex:none" placeholder="min"/></div></div>
         <div class="row">
           <button class="btn primary" id="saveBtn">Save</button>
           <button class="btn" id="testBtn">Test voice</button>
@@ -231,6 +231,7 @@ function wire(){
   (document.getElementById('persona') as HTMLTextAreaElement).value = settings.persona;
   (document.getElementById('rate') as HTMLInputElement).value = String(settings.rate);
   (document.getElementById('chatterEnabled') as HTMLSelectElement).value = settings.chatter===false?'no':'yes';
+  (document.getElementById('chatterMinutes') as HTMLInputElement).value = String(settings.chatterMinutes ?? 15);
   startChatter();
   const aiSel=document.getElementById('aiVoice') as HTMLSelectElement;
   aiSel.innerHTML='';
@@ -318,7 +319,8 @@ function save(){
   const rate=parseFloat((document.getElementById('rate') as HTMLInputElement).value);
   const micOn=(document.getElementById('micEnabled') as HTMLSelectElement).value==='yes';
   const chatter=(document.getElementById('chatterEnabled') as HTMLSelectElement).value!=='no';
-  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.chatter=chatter;
+  const chatterMinutes=Math.min(120, Math.max(1, parseInt((document.getElementById('chatterMinutes') as HTMLInputElement).value)||15));
+  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes;
   saveSettings(settings);
   startChatter();
   tts.setAiVoice(aiVoice); tts.setRate(rate);
@@ -343,7 +345,7 @@ function updateMic(){
   if(input) input.placeholder = !wake.isSupported ? 'Type a message' : isLegacyIOS ? 'Tap mic or type' : `Say “${settings.wakeWord}” or type`;
 }
 // ponytail: idle chatter — 10 pre-baked lines, zero network except the TTS
-// voice she already uses. One utterance per 15 min, Air-safe.
+// voice she already uses. One utterance per chatterMinutes, Air-safe.
 const VOICELINES = [
   "Hey there! Did you miss me, or are you just ignoring me on purpose?",
   "Boop! Just checking in to make sure you're still alive out there.",
@@ -356,14 +358,14 @@ const VOICELINES = [
   "Checking in! On a scale of one to stressed, how's your day going?",
   "Surprise! I'm still right here living in your tablet, cheering you on.",
 ];
-const CHATTER_MS = 15*60*1000;
+const chatterMs = ()=> Math.min(120, Math.max(1, Number(settings.chatterMinutes)||15))*60*1000;
 let chatterTimer: number | null = null;
 let lastChatter = -1;
 function startChatter(){
   if(chatterTimer) window.clearInterval(chatterTimer);
   chatterTimer = null;
   if(settings.chatter===false) return;
-  chatterTimer = window.setInterval(chatterTick, CHATTER_MS);
+  chatterTimer = window.setInterval(chatterTick, chatterMs());
 }
 async function chatterTick(){
   if(settings.chatter===false || document.hidden || isThinking) return;
