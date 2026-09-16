@@ -82,8 +82,10 @@ export class SaphiraAvatar {
   private neckBone: THREE.Object3D | null = null;
   private spineBone: THREE.Object3D | null = null;
   private hipsBone: THREE.Object3D | null = null;
-  private hipsBindY = 0;
-  private hipsTmp = new THREE.Vector3();
+  private hipsBindX = 0; private hipsBindZ = 0;
+  private footBones: THREE.Object3D[] = [];
+  private footBindY: number[] = [];
+  private footTmp = new THREE.Vector3();
   private lidBone: THREE.Object3D | null = null;
   private animated = new Set<string>(); // node names driven by baked clips
   private headBaseQ = new THREE.Quaternion();
@@ -387,14 +389,17 @@ export class SaphiraAvatar {
       this.neckBone = findBone(['mixamorig:Neck','Neck','neck']) ?? null;
       this.spineBone = findBone(['mixamorig:Spine','mixamorig:Spine1','Spine','spine']) ?? null;
       this.hipsBone = findBone(['mixamorig:Hips','Hips','hips']) ?? null;
-      // bind-pose hips world Y — walk/wander clips bob Hips below bind, which
-      // pushed feet through the ground. We lift by the dip each frame (see animate).
-      if(this.hipsBone){
-        try{
-          this.model.updateMatrixWorld(true);
-          this.hipsBindY = this.hipsBone.getWorldPosition(new THREE.Vector3()).y;
-        }catch{ this.hipsBindY = 0; }
-      }
+      if(this.hipsBone){ this.hipsBindX = this.hipsBone.position.x; this.hipsBindZ = this.hipsBone.position.z; }
+      // sampled in Blender (foot minZ, rest=0.017): idle/nod grounded, but every
+      // Mixamo clip carries its own root height — talk/walk/wander/wave/raise sit
+      // ~1.3 below bind (head-only above the disc), yawn ~2.5 (fully submerged).
+      // Record ankle/toe bind heights; the animate loop lifts each clip back up.
+      this.footBones = ['mixamorig:LeftFoot','mixamorig:RightFoot','mixamorig:LeftToeBase','mixamorig:RightToeBase']
+        .map(n=>findBone([n])).filter((b):b is THREE.Object3D=>!!b);
+      try{
+        this.model.updateMatrixWorld(true);
+        this.footBindY = this.footBones.map(b=>b.getWorldPosition(new THREE.Vector3()).y);
+      }catch{ this.footBindY = []; }
       this.lidBone = findBone(['lid','mixamorig:HeadTop_End']) ?? null;
       // lid on Mixamo is just a tip bone — don't use it for blinking if it's not a lid
       if(this.lidBone && this.lidBone.name.includes('HeadTop')) this.lidBone=null;
@@ -619,12 +624,23 @@ export class SaphiraAvatar {
       this.root.rotation.x = this.lookY*0.04;
     }
     if(this.mixer) this.mixer.update(dt);
-    // keep feet on the floor: if the baked clip dipped Hips below bind, lift back up
-    if(this.model && this.hipsBone && this.hipsBindY>0){
+    // pin baked Hips XZ while walking — Walk In Circle carries its own circle,
+    // which added to our steering and drifted her off screen
+    if(this.hipsBone && this.model && this.wanderMode==='walk'){
+      this.hipsBone.position.x = this.hipsBindX;
+      this.hipsBone.position.z = this.hipsBindZ;
+    }
+    // foot clamp: lift so the lowest ankle/toe sits at its bind height, sole on
+    // the disc. Planted feet don't move in a crouch, so idle sway keeps its life.
+    if(this.model && this.footBones.length && this.footBindY.length===this.footBones.length){
       try{
-        this.hipsBone.getWorldPosition(this.hipsTmp);
-        const dip = this.hipsTmp.y - this.hipsBindY;
-        if(dip < -0.005) this.model.position.y = this.baseY + Math.min(-dip, 0.18);
+        let lift = 0;
+        for(let i=0;i<this.footBones.length;i++){
+          this.footBones[i].getWorldPosition(this.footTmp);
+          const need = this.footBindY[i] + 0.01 - this.footTmp.y;
+          if(need > lift) lift = need;
+        }
+        this.model.position.y = this.baseY + Math.max(0, Math.min(lift, 3.0));
       }catch{}
     }
     this.applyLife(dt);
