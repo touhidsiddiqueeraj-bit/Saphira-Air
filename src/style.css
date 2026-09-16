@@ -77,7 +77,9 @@ html[data-theme="night"] .livepill{background:rgba(236,233,227,0.94);color:#111}
 /* bottom dock — single pill */
 .dock{position:absolute;left:12px;right:12px;bottom:14px;z-index:12;display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none}
 .dock > *{pointer-events:auto}
-.bubbles{width:min(680px,100%);display:flex;flex-direction:column;gap:8px;align-items:stretch;max-height:32vh;overflow:hidden;pointer-events:none}
+.bubbles{width:min(680px,100%);display:flex;flex-direction:column;gap:8px;align-items:stretch;max-height:32vh;overflow:hidden;pointer-events:none;transition:opacity 1.2s ease}
+/* ponytail: chat fades out after 20s idle, back in on the next message */
+.bubbles.idle{opacity:0}
 .bubble{padding:10px 14px;border-radius:18px;font-size:14px;line-height:1.45;word-wrap:break-word;max-width:88%;box-shadow:0 6px 22px rgba(0,0,0,0.07);backdrop-filter:blur(8px)}
 .bubble.bot{align-self:flex-start;background:rgba(255,255,255,0.92);border:1px solid rgba(0,0,0,0.06);color:#1a1a1e;border-bottom-left-radius:6px;pointer-events:auto}
 .bubble.user{align-self:flex-end;background:#111;color:white;border-bottom-right-radius:6px}

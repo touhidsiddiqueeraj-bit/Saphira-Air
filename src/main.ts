@@ -380,6 +380,7 @@ async function chatterTick(){
   if(!heard) window.setTimeout(()=>{ avatar?.setTalking(false); }, Math.min(6000, 1400+line.length*55));
 }
 let liveTimer: number | null = null;
+let bubbleTimer: number | null = null;
 let voiceWarned=false;
 function voiceWarn(){
   if(voiceWarned) return; voiceWarned=true;
@@ -394,6 +395,10 @@ function flashLive(text:string, ms=2400){
 }
 function addBubble(role:'user'|'bot', text:string, thinking=false){
   const bubbles=document.getElementById('bubbles')!;
+  // ponytail: any new message wakes the chat; 20s of quiet fades it out
+  bubbles.classList.remove('idle');
+  if(bubbleTimer) clearTimeout(bubbleTimer);
+  bubbleTimer=window.setTimeout(()=> bubbles.classList.add('idle'), 20000);
   const div=document.createElement('div');
   div.className='bubble '+(role==='user'?'user':'bot');
   if(thinking){
