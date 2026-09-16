@@ -362,9 +362,10 @@ export class SaphiraAvatar {
             for(const t of (c as any).tracks) this.animated.add(String(t.name).split('.').slice(0,-1).join('.'));
           }
           const w = this.acts.get('wander') ?? this.acts.get('walk');
-          // ponytail: slower/longer stride — was 0.3× (≈3.7→capped 1.1), now 0.12× (≈1.5→0.65) + slowed timeScale
-          if(w) this.walkSpeed = Math.max(0.28, Math.min(0.65, (w.getClip().duration||1)*0.12));
-          for(const k of ['wander','walk']){ const a=this.acts.get(k); if(a) a.timeScale = this.isLegacy ? 0.62 : 0.78; }
+          // ponytail: long slow strolls — 0.3 m/s covers ~1m in 3s, stride slowed so Air reads it at 30fps
+          if(w) this.walkSpeed = this.isLegacy ? 0.30 : 0.36;
+          for(const k of ['wander','walk']){ const a=this.acts.get(k); if(a) a.timeScale = this.isLegacy ? 0.55 : 0.7; }
+          const yw=this.acts.get('yawn'); if(yw) yw.timeScale = 0.95;
         }
       }catch{ this.mixer=null; }
       // rig hooks for head tracking / blinking / breathing
@@ -440,11 +441,12 @@ export class SaphiraAvatar {
     const idle = this.wanderMode==='none' && !this.busy && !this.talking;
     if(idle){
       const r=Math.random();
-      // wander slower/longer, plus periodic Mixamo waves
-      if(r<0.62){ this.startWander(); }
-      else if(r<0.80){ this.playOnce('wave_small'); }
-      else if(r<0.92){ this.playOnce('wave'); }
-      else if(r<0.96){ this.startGlance(); }
+      // walks + waves + yawns, all Mixamo. Yawn needs idle or it clips the stride.
+      if(r<0.52){ this.startWander(); }
+      else if(r<0.66){ this.playOnce('wave_small'); }
+      else if(r<0.76){ this.playOnce('wave'); }
+      else if(r<0.90){ this.playOnce('yawn'); }
+      else if(r<0.95){ this.startGlance(); }
       else {
         this.tiltAmt = (Math.random()<0.5?-1:1)*0.09;
         this.tiltUntil = performance.now()/1000 + 2.2 + Math.random()*1.5;
@@ -457,14 +459,15 @@ export class SaphiraAvatar {
     const p=this.model.position;
     let tx:number, tz:number;
     if(Math.abs(p.x)>0.5 || Math.abs(p.z)>0.45){
-      // drifted far — head back toward home
-      tx = (Math.random()-0.5)*0.5;
-      tz = (Math.random()-0.5)*0.3;
+      // drifted far — cross to the opposite side for a long walk home
+      tx = (p.x>0?-1:1)*(0.6+Math.random()*0.45);
+      tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
     } else {
-      tx = (Math.random()*2-1)*WANDER_X;
+      // pick a far edge so walks last 3-5s at 0.3 m/s
+      tx = (Math.random()<0.5?-1:1)*(0.65+Math.random()*0.4);
       tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
     }
-    if(Math.hypot(tx-p.x, tz-p.z) < 0.35) return; // already there — stay put
+    if(Math.hypot(tx-p.x, tz-p.z) < 0.6) tx = -tx; // too close — go the other way
     this.wanderTarget.set(tx, 0, tz);
     const a=this.acts.get('wander') ?? this.acts.get('walk');
     if(!a) return;
@@ -578,12 +581,13 @@ export class SaphiraAvatar {
 
   private animate = ()=>{
     this.raf=requestAnimationFrame(this.animate);
-    // ponytail: legacy throttles to ~30fps to keep A7 GPU under thermal — skip every other frame
+    // ponytail: legacy throttles to ~30fps — single getDelta per frame (double call froze mixer on Air)
+    const rawDt = this.clock.getDelta();
     if(this.isLegacy){
-      this.legacyFpsAcc += this.clock.getDelta();
+      this.legacyFpsAcc += rawDt;
       if(this.legacyFpsAcc < 1/30){ return; }
     }
-    const dt=Math.min(this.clock.getDelta(), 0.05);
+    const dt=Math.min(this.isLegacy ? this.legacyFpsAcc : rawDt, 0.05);
     if(this.isLegacy) this.legacyFpsAcc = 0;
     const t=this.clock.elapsedTime;
     if(this.model){
