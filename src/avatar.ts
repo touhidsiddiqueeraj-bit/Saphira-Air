@@ -5,7 +5,7 @@ export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg3';
+export const BUILD = 'air-dbg4';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -375,9 +375,9 @@ export class SaphiraAvatar {
             for(const t of (c as any).tracks) this.animated.add(String(t.name).split('.').slice(0,-1).join('.'));
           }
           const w = this.acts.get('wander') ?? this.acts.get('walk');
-          // ponytail: long slow strolls — 0.3 m/s covers ~1m in 3s, stride slowed so Air reads it at 30fps
-          if(w) this.walkSpeed = this.isLegacy ? 0.30 : 0.36;
-          for(const k of ['wander','walk']){ const a=this.acts.get(k); if(a) a.timeScale = this.isLegacy ? 0.55 : 0.7; }
+          // ponytail: brisk strolls — stride at full rate so feet match ground speed
+          if(w) this.walkSpeed = this.isLegacy ? 0.45 : 0.6;
+          for(const k of ['wander','walk']){ const a=this.acts.get(k); if(a) a.timeScale = this.isLegacy ? 0.8 : 1.0; }
           const yw=this.acts.get('yawn'); if(yw) yw.timeScale = 0.95;
           const rs=this.acts.get('raise'); if(rs) rs.timeScale = 1.0;
         }
@@ -639,9 +639,11 @@ export class SaphiraAvatar {
       this.root.rotation.x = this.lookY*0.04;
     }
     if(this.mixer) this.mixer.update(dt);
-    // pin baked Hips XZ while walking — Walk In Circle carries its own circle,
-    // which added to our steering and drifted her off screen
-    if(this.hipsBone && this.model && this.wanderMode==='walk'){
+    // pin baked Hips XZ on every clip — Wander's circle plus the dance/yawn/
+    // raise root drift all walked her across and off the disc; our own
+    // steering moves model.position, so no clip legitimately needs Hips XZ.
+    // Hips Y stays free (crouch/bob life + foot clamp own the vertical).
+    if(this.hipsBone && this.model){
       this.hipsBone.position.x = this.hipsBindX;
       this.hipsBone.position.z = this.hipsBindZ;
     }
