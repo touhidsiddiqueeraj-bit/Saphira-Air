@@ -5,7 +5,7 @@ export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg8';
+export const BUILD = 'air-dbg9';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -14,6 +14,10 @@ const DAY_BG = new THREE.Color('#ece9e3');
 const NIGHT_BG = new THREE.Color('#131418');
 const DAY_GROUND = new THREE.Color('#e8e5df');
 const NIGHT_GROUND = new THREE.Color('#1d1f26');
+// studio floor: a step darker than the bg so the horizon reads. Same color as
+// the bg is invisible (that was the dbg8 no-op) — this tone grounds the disc.
+const DAY_FLOOR = new THREE.Color('#dbd7cd');
+const NIGHT_FLOOR = new THREE.Color('#0e0f13');
 const DAY_KEY = new THREE.Color('#fff6ee');
 const NIGHT_KEY = new THREE.Color('#9fb4ff');
 
@@ -212,7 +216,7 @@ export class SaphiraAvatar {
   private applyTheme(b: number){
     (this.scene.background as THREE.Color).copy(DAY_BG).lerp(NIGHT_BG, b);
     this.baseBg.copy(this.scene.background as THREE.Color);
-    this.backdropMat.color.copy(this.scene.background as THREE.Color);
+    this.backdropMat.color.copy(DAY_FLOOR).lerp(NIGHT_FLOOR, b);
     if(this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color);
     this.groundMat.color.copy(DAY_GROUND).lerp(NIGHT_GROUND, b);
     this.ambient.intensity = 0.72 - b*0.34;   // 0.72 day -> 0.38 night
@@ -240,10 +244,10 @@ export class SaphiraAvatar {
     this.scene.add(this.moodLight);
   }
   private addGround(){
-    // ponytail: seamless studio — infinite floor in the bg color + fog melts the
-    // horizon, so the disc reads as a rug instead of an island in the void.
-    // One unlit plane, zero cost on the Air.
-    this.backdropMat = new THREE.MeshBasicMaterial({ color:0xece9e3 });
+    // ponytail: seamless studio — infinite floor a step darker than the bg + fog
+    // melts the horizon, so the disc reads as a rug on a floor instead of an
+    // island in the void. One unlit plane, zero cost on the Air.
+    this.backdropMat = new THREE.MeshBasicMaterial({ color:0xdbd7cd });
     const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), this.backdropMat);
     backdrop.rotation.x = -Math.PI/2;
     backdrop.position.y = -0.02;
@@ -259,7 +263,7 @@ export class SaphiraAvatar {
     this.ground.rotation.x = -Math.PI/2;
     this.ground.position.y = 0;
     this.scene.add(this.ground);
-    const sh = new THREE.Mesh(new THREE.CircleGeometry(0.55, shSegs), new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.09 }));
+    const sh = new THREE.Mesh(new THREE.CircleGeometry(0.85, shSegs), new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.12 }));
     sh.rotation.x = -Math.PI/2; sh.position.y = 0.005; this.scene.add(sh);
     this.shadow = sh;
   }
