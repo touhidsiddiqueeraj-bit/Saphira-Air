@@ -667,7 +667,7 @@ export class SaphiraAvatar {
       if(r<0.38){ this.startWander(); }
       else if(r<0.56){ this.playOnce('raise'); }
       else if(r<0.72){ this.playOnce('yawn'); }
-      else if(r<0.82 && this.pianoReady && Date.now()-this.lastPiano > 5*60*1000){ this.startPiano(); }
+      else if(r<0.82 && this.pianoReady && Date.now()-this.lastPiano > this.pianoEveryMs){ this.startPiano(); }
       else if(r<0.94){ this.startGlance(); }
       else {
         this.tiltAmt = (Math.random()<0.5?-1:1)*0.09;
