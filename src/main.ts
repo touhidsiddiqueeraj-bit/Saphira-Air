@@ -114,6 +114,7 @@ function renderApp(){
         <div class="field"><span>Personality</span><div class="row" id="presetRow"></div><textarea id="persona" spellcheck="false"></textarea></div>
         <label class="field"><span>AI voice</span><select id="aiVoice"></select></label>
         <div class="field"><span>Rate</span><div class="row"><input id="rate" type="range" min="0.7" max="1.3" step="0.05" style="flex:1"/></div></div>
+        <div class="field"><span>Zoom <small style="opacity:.6;font-weight:400">— closer or farther camera</small></span><div class="row"><input id="zoom" type="range" min="0.7" max="1.6" step="0.05" style="flex:1"/></div></div>
         <label class="field"><span>Mic</span><select id="micEnabled"><option value="no">Off</option><option value="yes">On</option></select></label>
         <div class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up on a timer</small></span><div class="row" style="display:flex;gap:8px"><select id="chatterEnabled" style="flex:1"><option value="yes">On</option><option value="no">Off</option></select><input id="chatterMinutes" type="number" min="1" max="120" step="1" title="Minutes between lines" style="width:84px;flex:none" placeholder="min"/></div></div>
         <div class="row">
@@ -130,7 +131,7 @@ function renderApp(){
 
 function wire(){
   const canvas=document.getElementById('c') as HTMLCanvasElement;
-  avatar = new SaphiraAvatar(canvas);
+  avatar = new SaphiraAvatar(canvas, settings.zoom);
   const themeBtn=document.getElementById('themeBtn') as HTMLButtonElement;
   const syncThemeIcon=()=>{ themeBtn.textContent = THEME_ICON[avatar!.getTheme()]; };
   syncThemeIcon();
@@ -230,6 +231,7 @@ function wire(){
   (document.getElementById('wakeWord') as HTMLInputElement).value = settings.wakeWord;
   (document.getElementById('persona') as HTMLTextAreaElement).value = settings.persona;
   (document.getElementById('rate') as HTMLInputElement).value = String(settings.rate);
+  (document.getElementById('zoom') as HTMLInputElement).value = String(settings.zoom ?? 1);
   (document.getElementById('chatterEnabled') as HTMLSelectElement).value = settings.chatter===false?'no':'yes';
   (document.getElementById('chatterMinutes') as HTMLInputElement).value = String(settings.chatterMinutes ?? 15);
   startChatter();
@@ -317,12 +319,14 @@ function save(){
   if(persona.length>900) persona=persona.slice(0,900);
   const aiVoice=(document.getElementById('aiVoice') as HTMLSelectElement).value || settings.aiVoice;
   const rate=parseFloat((document.getElementById('rate') as HTMLInputElement).value);
+  const zoom=Math.min(1.6, Math.max(0.7, parseFloat((document.getElementById('zoom') as HTMLInputElement).value) || 1));
   const micOn=(document.getElementById('micEnabled') as HTMLSelectElement).value==='yes';
   const chatter=(document.getElementById('chatterEnabled') as HTMLSelectElement).value!=='no';
   const chatterMinutes=Math.min(120, Math.max(1, parseInt((document.getElementById('chatterMinutes') as HTMLInputElement).value)||15));
-  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes;
+  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes;
   saveSettings(settings);
   startChatter();
+  avatar?.setZoom(zoom);
   tts.setAiVoice(aiVoice); tts.setRate(rate);
   gemini.setRpm(settings.rpmLimit);
   wake.setWakeWord(wakeWord);

@@ -9,6 +9,7 @@ export type Settings = {
   rpmLimit: number;
   chatter: boolean; // idle voice lines
   chatterMinutes: number; // idle chatter interval in minutes
+  zoom: number; // camera zoom, 0.7 (far) – 1.6 (close), 1 = default framing
 };
 
 const LS_KEY = 'saphira_settings_v2';
@@ -33,6 +34,8 @@ export function loadSettings(): Settings {
       if(typeof s.persona==='string' && !s.persona.includes('"tasks"')) s.persona=(s.persona+TASKS_SUFFIX).slice(0,900);
       // ponytail: clamp chatter interval, old saves lack the field
       s.chatterMinutes = Math.min(120, Math.max(1, Number(s.chatterMinutes) || 15));
+      // ponytail: clamp zoom, old saves lack the field
+      s.zoom = Math.min(1.6, Math.max(0.7, Number(s.zoom) || 1));
       return s;
     }
   }catch{}
@@ -52,6 +55,7 @@ function defaults(): Settings {
     rpmLimit: 12,
     chatter: true,
     chatterMinutes: 15,
+    zoom: 1,
   };
 }
 export function saveSettings(s: Settings){

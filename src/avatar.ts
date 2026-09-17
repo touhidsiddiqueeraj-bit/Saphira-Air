@@ -5,7 +5,7 @@ export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg7';
+export const BUILD = 'air-dbg8';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -75,6 +75,7 @@ export class SaphiraAvatar {
   private baseBg = new THREE.Color('#ece9e3'); // theme bg before mood tint
   private ground!: THREE.Mesh;
   private groundMat!: THREE.MeshStandardMaterial;
+  private backdropMat!: THREE.MeshBasicMaterial;
   private shadow!: THREE.Mesh;
   private canvas: HTMLCanvasElement;
   private theme: Theme = (localStorage.getItem('saphira_theme') as Theme) || 'auto';
@@ -112,13 +113,17 @@ export class SaphiraAvatar {
   // ponytail: legacy = iPad Air 1 / iOS 12 — WebGL1 + 1GB RAM, kill the expensive bits but keep her look
   private isLegacy = false;
   private legacyFpsAcc = 0;
-  constructor(canvas: HTMLCanvasElement){
+  private zoom = 1; // >1 = closer. Settings slider, multiplies on top of the legacy idle crop.
+  constructor(canvas: HTMLCanvasElement, zoom = 1){
     (window as any).__saphiraAvatar = this;
     this.canvas=canvas;
+    this.zoom = this.clampZoom(zoom);
     this.isLegacy = this.detectLegacy();
     if(this.isLegacy) try{ document.documentElement.classList.add('legacy'); }catch{}
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#ece9e3');
+    // ponytail: fog melts the floor into the bg — model sits at ~3-5, fog starts at 14
+    this.scene.fog = new THREE.Fog(0xece9e3, 14, 34);
     const w = canvas.clientWidth||800, h=canvas.clientHeight||800;
     this.camera = new THREE.PerspectiveCamera(34, w/h, 0.1, 100);
     this.camera.position.set(0, 1.1, 4.6);
@@ -176,8 +181,7 @@ export class SaphiraAvatar {
   }
 
   // ---- theme ----
-  getTheme(): Theme { return this.theme; }
-  setTheme(m: Theme){
+  getTheme(): Theme { return this.theme; }  setTheme(m: Theme){
     this.theme=m;
     localStorage.setItem('saphira_theme', m);
     document.documentElement.dataset.theme = this.resolved();
@@ -189,6 +193,16 @@ export class SaphiraAvatar {
     const h=new Date().getHours();
     return (h>=7 && h<19) ? 'day' : 'night';
   }
+  // ---- zoom (settings slider) ----
+  private clampZoom(z: number){
+    const n = Number(z);
+    if(!isFinite(n)) return 1;
+    return Math.min(1.6, Math.max(0.7, n));
+  }
+  setZoom(z: number){
+    this.zoom = this.clampZoom(z);
+    this.fitCamera();
+  }
   private applyTarget(){
     const t = this.resolved()==='night' ? 1 : 0;
     // snap dataset for CSS, blend animates canvas smoothly
@@ -198,6 +212,8 @@ export class SaphiraAvatar {
   private applyTheme(b: number){
     (this.scene.background as THREE.Color).copy(DAY_BG).lerp(NIGHT_BG, b);
     this.baseBg.copy(this.scene.background as THREE.Color);
+    this.backdropMat.color.copy(this.scene.background as THREE.Color);
+    if(this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color);
     this.groundMat.color.copy(DAY_GROUND).lerp(NIGHT_GROUND, b);
     this.ambient.intensity = 0.72 - b*0.34;   // 0.72 day -> 0.38 night
     this.lightKey.intensity = 0.55 - b*0.39;  // 0.55 -> 0.16
@@ -224,6 +240,14 @@ export class SaphiraAvatar {
     this.scene.add(this.moodLight);
   }
   private addGround(){
+    // ponytail: seamless studio — infinite floor in the bg color + fog melts the
+    // horizon, so the disc reads as a rug instead of an island in the void.
+    // One unlit plane, zero cost on the Air.
+    this.backdropMat = new THREE.MeshBasicMaterial({ color:0xece9e3 });
+    const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), this.backdropMat);
+    backdrop.rotation.x = -Math.PI/2;
+    backdrop.position.y = -0.02;
+    this.scene.add(backdrop);
     // ponytail: 32/28 segs is overkill on A7 — 20 segs looks same at distance
     const segs = this.isLegacy ? 20 : 32;
     const shSegs = this.isLegacy ? 16 : 28;
@@ -451,14 +475,14 @@ export class SaphiraAvatar {
     const distH=(W/2)/(vTan*aspect);
     const dist=Math.max(distV,distH)*1.0;
     const cy=H*(this.isLegacy ? 0.60 : 0.52); // legacy idle crops to torso-up so her face reads at dpr 1
-    const homeDist = dist*(this.isLegacy ? 0.62 : 1.0);
+    const homeDist = dist*(this.isLegacy ? 0.62 : 1.0)/this.zoom;
     this.homePos.set(0, cy+0.06, homeDist);
     this.homeLook.set(0, cy, 0);
     // face closeup: the rig's bone world positions sit in a crumpled bind
     // space (skinning compensates), so frame on the rendered proportions —
     // head center ≈ 0.85 of body height
     const faceY = this.baseY + H*0.85;
-    this.facePos.set(0, faceY+0.02, dist*0.52);
+    this.facePos.set(0, faceY+0.02, dist*0.52/this.zoom);
     this.faceLook.set(0, faceY, 0);
     if(!this.faceMode){
       this.camera.position.copy(this.homePos);
