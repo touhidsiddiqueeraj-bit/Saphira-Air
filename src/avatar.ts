@@ -5,7 +5,7 @@ export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg5';
+export const BUILD = 'air-dbg7';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -450,8 +450,9 @@ export class SaphiraAvatar {
     const distV=(H/2)/(vTan*usable);
     const distH=(W/2)/(vTan*aspect);
     const dist=Math.max(distV,distH)*1.0;
-    const cy=H*0.52; // look slightly above middle so feet clear the dock
-    this.homePos.set(0, cy+0.06, dist);
+    const cy=H*(this.isLegacy ? 0.60 : 0.52); // legacy idle crops to torso-up so her face reads at dpr 1
+    const homeDist = dist*(this.isLegacy ? 0.62 : 1.0);
+    this.homePos.set(0, cy+0.06, homeDist);
     this.homeLook.set(0, cy, 0);
     // face closeup: the rig's bone world positions sit in a crumpled bind
     // space (skinning compensates), so frame on the rendered proportions —
