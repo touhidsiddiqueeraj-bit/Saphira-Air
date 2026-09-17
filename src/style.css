@@ -53,7 +53,7 @@ html[data-theme="night"] .tasks-add button{background:#ece9e3;color:#111;border-
 /* night */
 html[data-theme="night"]{background:#131418;color:#ece9e3}
 html[data-theme="night"] body{background:#131418;color:#ece9e3}
-html[data-theme="night"] .stage{background:#131418}
+/* night keeps the city photo — it's already a night scene; the vignette just deepens */
 html[data-theme="night"] .stage::after{background:radial-gradient(900px 600px at 50% 38%, transparent 62%, rgba(0,0,0,0.35) 100%)}
 html[data-theme="night"] .gear,html[data-theme="night"] .theme{background:rgba(30,32,40,0.9);border-color:rgba(255,255,255,0.12);color:#ece9e3}
 html[data-theme="night"] .bubble.bot{background:rgba(30,32,40,0.94);border-color:rgba(255,255,255,0.1);color:#ece9e3}
