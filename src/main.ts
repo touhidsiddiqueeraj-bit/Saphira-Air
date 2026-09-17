@@ -252,6 +252,22 @@ function wire(){
     if(dt) dt.textContent=d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'});
   };
   tickClock(); window.setInterval(tickClock, 5000);
+  // fullscreen (hides the address bar where the browser supports it)
+  try{
+    const fsBtn=document.getElementById('fsBtn') as HTMLButtonElement;
+    const docAny=document.documentElement as any;
+    if(docAny.requestFullscreen || docAny.webkitRequestFullscreen){
+      fsBtn.style.display='grid';
+      fsBtn.addEventListener('click', ()=>{
+        try{
+          const d:any = document.documentElement;
+          const active = document.fullscreenElement || (document as any).webkitFullscreenElement;
+          if(active){ (document as any).exitFullscreen ? (document as any).exitFullscreen() : d.webkitExitFullscreen && d.webkitExitFullscreen(); }
+          else { d.requestFullscreen ? d.requestFullscreen() : (d.webkitRequestFullscreen && d.webkitRequestFullscreen()); }
+        }catch{}
+      });
+    }
+  }catch{}
   // ---- clock tools: timer + stopwatch + alarms (click the clock) ----
   const clockEl=document.getElementById('clock') as HTMLElement;
   const clockPanel=document.getElementById('clockPanel') as HTMLElement;
