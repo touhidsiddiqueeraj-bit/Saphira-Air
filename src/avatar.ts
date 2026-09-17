@@ -4,7 +4,7 @@ import { playPianoPhrase, stopPianoPhrase } from './pianoSong';
 import { pianoOn } from './settings';
 
 export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking'|'annoyed'|'blush';
-export type Gesture = 'none'|'wave'|'nod'|'shrug';
+export type Gesture = 'none'|'wave'|'nod'|'shrug'|'piano';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
 export const BUILD = 'air-dbg13';
@@ -39,8 +39,9 @@ const PIANO_POS = (() => {
   };
 })();
 const PIANO_ROT = SIT.rotY + PIANO_REL.rotY;
-// deliberate piano shot: from the back side of the piano, elevated over the
-// case — keys + case edge in the foreground, zoom on her face as she plays
+// deliberate piano shot (user-approved): from the back side of the piano,
+// elevated over the case — keys + case edge in the foreground, zoom on her
+// face as she plays
 const PIANO_CAM_POS = new THREE.Vector3(SIT.x - 2.0, 1.62, SIT.z + 0.28);
 const PIANO_CAM_LOOK = new THREE.Vector3(SIT.x + 0.1, 1.42, SIT.z + 0.02);
 // wandering feet stay out of the piano corner
@@ -234,8 +235,10 @@ export class SaphiraAvatar {
   // staging walks her to the bench; cleared when the piano clip finishes.
   private pianoReady = false;
   private staging: '' | 'piano-walk' | 'piano-turn' | 'piano-play' = '';
-  private lastPiano = Date.now();      // auto-piano cooldown: once per 5 min
+  private lastPiano = Date.now();      // auto-piano cooldown stamp
   private pianoEndTimer: number | null = null;
+  private pianoEveryMs = 5*60*1000;    // settings: cooldown between performances
+  private pianoLenS = 30;              // settings: performance length in seconds
   // intermediate waypoint when a walk path would cross the piano footprint
   private via = new THREE.Vector3();
   private hasVia = false;
@@ -733,7 +736,7 @@ export class SaphiraAvatar {
   private startPiano(force=false){
     if(!this.pianoReady || !!this.staging || !this.acts.has('piano')) return;
     if(!pianoOn()) return;                      // piano toggled off in settings
-    if(!force && Date.now()-this.lastPiano < 5*60*1000) return; // cooldown
+    if(!force && Date.now()-this.lastPiano < this.pianoEveryMs) return; // cooldown
     this.lastPiano = Date.now();
     // she might be mid-yawn — brush it aside, the walk takes over
     this.oneShot?.fadeOut(0.3);
@@ -748,6 +751,8 @@ export class SaphiraAvatar {
   }
   // cut a performance short (settings toggle flipped off mid-play)
   stopPiano(){ this.endPiano(); }
+  setPianoEvery(min:number){ this.pianoEveryMs = Math.max(1, Math.min(60, min||5))*60*1000; }
+  setPianoLength(sec:number){ this.pianoLenS = Math.max(10, Math.min(120, sec||30)); }
   private endPiano(){
     if(this.pianoEndTimer){ window.clearTimeout(this.pianoEndTimer); this.pianoEndTimer=null; }
     if(this.oneShot && this.oneShot.getClip().name.toLowerCase()==='piano'){
@@ -977,10 +982,10 @@ export class SaphiraAvatar {
         // stretch the 9.5s clip into a ~30s performance (slow, dreamy
         // playing — hidden by the camera shot anyway)
         const pa=this.acts.get('piano');
-        if(pa){ pa.timeScale = 0.3178; }
+        if(pa){ pa.timeScale = 9.533/this.pianoLenS; }
         this.playOnce('piano');
         playPianoPhrase();
-        this.pianoEndTimer = window.setTimeout(()=> this.endPiano(), 30600);
+        this.pianoEndTimer = window.setTimeout(()=> this.endPiano(), this.pianoLenS*1000 + 150);
       }
     }
     // smooth camera dolly, following her wherever she stands on the stage

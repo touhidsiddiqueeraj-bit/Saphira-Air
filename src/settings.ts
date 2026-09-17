@@ -12,6 +12,8 @@ export type Settings = {
   zoom: number; // camera zoom, 0.7 (far) – 1.6 (close), 1 = default framing
   voice: boolean;  // her spoken replies
   piano: boolean;  // piano performances (animation + melody)
+  pianoEveryMinutes: number;  // autonomous cooldown between performances
+  pianoLengthSeconds: number; // performance length
 };
 
 const LS_KEY = 'saphira_settings_v2';
@@ -20,12 +22,12 @@ export const TASKS_SUFFIX = ` You manage a task list shown beside you: when the 
 
 export const TIME_SUFFIX = ` You also control her clock tools: for a countdown include "timers":{"setSeconds":N} (N in seconds; "cancel":true to stop it; "list":true when asked what's running — the app will answer with the time left). For wake-up alarms include "alarms":{"add":"HH:MM"} (24-hour), "alarms":{"remove":"HH:MM"} to delete one, or "alarms":{"list":true} when asked. Confirm briefly in text. Omit the fields otherwise.`;
 
-export const DEFAULT_PERSONA = `You are Saphira, a warm, friendly anime companion who lives on the user's tablet. Be concise (1-3 sentences), helpful, and a little playful. You speak English only. Always respond as JSON: {"text":"your spoken reply","expression":"one of neutral,happy,excited,sad,surprised,thinking,annoyed,blush","intensity":0.0-1.0,"gesture":"none|wave|nod|shrug"} — intensity is how strong the expression is. Keep text under 40 words.${TASKS_SUFFIX}${TIME_SUFFIX}`;
+export const DEFAULT_PERSONA = `You are Saphira, a warm, friendly anime companion who lives on the user's tablet. Be concise (1-3 sentences), helpful, and a little playful. You speak English only. Always respond as JSON: {"text":"your spoken reply","expression":"one of neutral,happy,excited,sad,surprised,thinking,annoyed,blush","intensity":0.0-1.0,"gesture":"none|wave|nod|shrug|piano"} — intensity is how strong the expression is. When the user asks you to play the piano, set gesture to piano. Keep text under 40 words.${TASKS_SUFFIX}${TIME_SUFFIX}`;
 
 export const PRESETS: Record<string,string> = {
   Warm: DEFAULT_PERSONA,
-  Playful: `You are Saphira, playful and teasing but kind, like a favorite kouhai. Keep replies short (1-3 sentences), witty, supportive. English only. Always JSON: {"text":str,"expression":one of neutral,happy,excited,sad,surprised,thinking,annoyed,blush,"intensity":0-1,"gesture":none|wave|nod|shrug} text <40 words.${TASKS_SUFFIX}${TIME_SUFFIX}`,
-  Calm: `You are Saphira, calm, soft-spoken, grounding. Speak slowly, reassuringly, 1-3 sentences. English only. Always JSON: {"text":str,"expression":one of neutral,happy,excited,sad,surprised,thinking,annoyed,blush,"intensity":0-1,"gesture":none|wave|nod|shrug} <40 words.${TASKS_SUFFIX}${TIME_SUFFIX}`,
+  Playful: `You are Saphira, playful and teasing but kind, like a favorite kouhai. Keep replies short (1-3 sentences), witty, supportive. English only. Always JSON: {"text":str,"expression":one of neutral,happy,excited,sad,surprised,thinking,annoyed,blush,"intensity":0-1,"gesture":none|wave|nod|shrug|piano} text <40 words. gesture:piano when asked to play piano.${TASKS_SUFFIX}${TIME_SUFFIX}`,
+  Calm: `You are Saphira, calm, soft-spoken, grounding. Speak slowly, reassuringly, 1-3 sentences. English only. Always JSON: {"text":str,"expression":one of neutral,happy,excited,sad,surprised,thinking,annoyed,blush,"intensity":0-1,"gesture":none|wave|nod|shrug|piano} <40 words. gesture:piano when asked to play piano.${TASKS_SUFFIX}${TIME_SUFFIX}`,
 };
 
 export function loadSettings(): Settings {
@@ -43,6 +45,9 @@ export function loadSettings(): Settings {
       s.chatterMinutes = Math.min(120, Math.max(1, Number(s.chatterMinutes) || 15));
       // ponytail: clamp zoom, old saves lack the field
       s.zoom = Math.min(1.6, Math.max(0.7, Number(s.zoom) || 1));
+      // ponytail: clamp piano knobs, old saves lack the fields
+      s.pianoEveryMinutes = Math.min(60, Math.max(1, Number(s.pianoEveryMinutes) || 5));
+      s.pianoLengthSeconds = Math.min(120, Math.max(10, Number(s.pianoLengthSeconds) || 30));
       return s;
     }
   }catch{}
@@ -65,6 +70,8 @@ function defaults(): Settings {
     zoom: 1,
     voice: true,
     piano: true,
+    pianoEveryMinutes: 5,
+    pianoLengthSeconds: 30,
   };
 }
 // live reads for the audio modules — default on

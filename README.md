@@ -1,34 +1,52 @@
 # Saphira Air — iPad Air (2013) edition
 
-Same Saphira. Now runs on a 2013 iPad Air.
+Saphira — a night-city companion with a grand piano. Now runs on a 2013 iPad Air.
 
-> Main build targets modern browsers. **Air** is the same character, same animations, same chat — tuned so iOS 12 / Safari 12 / WebGL 1 / 1GB RAM doesn't fall over. No separate lite model, no stripped features — just graceful degradation where the hardware demands it.
+> Main build targets modern browsers. **Air** is the same character, same scenes, same chat — tuned so iOS 12 / Safari 12 / WebGL 1 / 1GB RAM doesn't fall over. No separate lite model, no stripped features — just graceful degradation where the hardware demands it.
 
-![Saphira idle](docs/screenshot.png)
-![Saphira dancing](docs/screenshot-dance.png)
-![Saphira talking close-up](docs/screenshot-face.png)
+![Saphira idle against the night city](docs/screenshot.png)
+![Saphira playing the grand piano](docs/screenshot-piano.png)
 
-**Live demo:** deploy this repo to Vercel (see below) → open on the Air over HTTPS.
+## What she does
+
+- **Talks** — Gemini chat with spoken replies (Gemini TTS → browser voice fallback), personality presets, wake word on desktop, tap-to-talk on iOS.
+- **Plays the grand piano** — every few minutes she strolls to the case and performs for ~30 seconds. Three original tunes (lullaby, nocturne, music-box waltz), picked at random. Interval and length are adjustable in settings.
+- **Keeps time for you** — click the clock: a stopwatch, a countdown timer, and wake-up alarms that play a soft morning-keys track.
+- **Controls it all by chat** — *"set a timer for 10 minutes"*, *"cancel the timer"*, *"wake me at 7:30"*, *"remove my alarm"*, *"what alarms do I have"*, *"add milk to my tasks"* — she drives the real UI through JSON ops.
+- **Lives in the scene** — wanders the rooftop, glances around, yawns, follows your gaze, day/night lighting, night-city backdrop in both themes.
+
+![Clock tools: stopwatch, alarm, timer](docs/screenshot-clock.png)
+
+| Control | Where |
+|---|---|
+| Chat / voice in | bottom pill + mic |
+| Piano on/off, every N minutes, length | ⚙ → Piano |
+| Voice on/off | ⚙ → Voice |
+| Idle chatter on/off + interval | ⚙ → Idle chatter |
+| Stopwatch / Timer / Alarms | click the clock |
+| Personality, AI voice, rate, zoom | ⚙ |
+
+![Settings drawer](docs/screenshot-settings.png)
 
 ---
 
 ## What changed for Air
 
-Single adaptive build — modern iPads get 100%, the Air auto-switches via `html.legacy` (set before first paint in `index.html:6`).
+Single adaptive build — modern browsers get 100%, the Air auto-switches via `html.legacy` (set before first paint in `index.html`).
 
 | Area | Main | Air (`isLegacy`) | File |
 |---|---|---|---|
-| JS target | `es2022` | `es2015` + `cssTarget:ios12` — Safari 12 can parse it | `vite.config.ts:4` |
-| Renderer | `antialias:true`, `dpr 1.6`, `AgXToneMapping` | `antialias:false`, `dpr 1`, `NoToneMapping` fallback | `src/avatar.ts:102-135` |
-| Textures | anisotropy default | `anisotropy:1`, `LinearFilter` | `src/avatar.ts:255` |
-| Ground | 32/28 segs | 20/16 segs | `src/avatar.ts:220` |
-| Mood light | breathing PointLight + bg lerp | snap + decay (no per-frame sin) | `src/avatar.ts:645` |
-| Animate | 60fps | ~30fps throttle on A7 | `src/avatar.ts:570` |
-| Blur | `backdrop-filter:blur(12px)` everywhere | `html.legacy` forces solid `rgba` — Air composite can't do blur | `src/style.css:122`, `index.html:6` |
-| Audio | `AudioContext({24000})` | `webkitAudioContext` + 44100 fallback, resamples PCM | `src/aiVoice.ts:53` |
-| Voice-in | continuous wake word (`hey saphira`) | tap-to-talk only — iOS Safari never shipped `SpeechRecognition` | `src/speech.ts:28`, `src/main.ts:20-34` |
+| JS target | `es2022` | `es2015` + `cssTarget:ios12` — Safari 12 can parse it | `vite.config.ts` |
+| Renderer | `antialias:true`, `dpr 1.6`, `AgXToneMapping` | `antialias:false`, `dpr 1`, `NoToneMapping` fallback | `src/avatar.ts` |
+| Textures | anisotropy default | `anisotropy:1`, `LinearFilter` | `src/avatar.ts` |
+| Ground segments | 32/28 | 20/16 | `src/avatar.ts` |
+| Mood light | breathing PointLight + bg lerp | snap + decay (no per-frame sin) | `src/avatar.ts` |
+| Animate | 60fps | ~30fps throttle on A7 | `src/avatar.ts` |
+| Blur | `backdrop-filter:blur(12px)` everywhere | `html.legacy` forces solid `rgba` — Air composite can't do blur | `src/style.css` |
+| Audio | `AudioContext({24000})` | `webkitAudioContext` + 44100 fallback, resamples PCM | `src/aiVoice.ts` |
+| Voice-in | continuous wake word (`hey saphira`) | tap-to-talk only — iOS Safari never shipped `SpeechRecognition` | `src/speech.ts` |
 
-Kept: same `public/model/ai_ohto.glb` (5.1MB), all 9 clips (`idle`/`talk`/`wander`/`walk`/`wave`/`wave_small`/`nod`/`raise`/`yawn`), foot-clamp grounding + Hips pin (every clip plays planted on the disc), wandering, head-track, random gaze on touch, blink, breathing, face-zoom, tasks (bottom right), day/night, Gemini chat + TTS.
+Kept: the same character model, the full clip set **plus a 30-second piano performance** (3 melodies), foot-clamp grounding + Hips pin (every clip plays planted on the disc), wandering with piano-avoidance routing, head-track, random gaze on touch, blink, breathing, face-zoom, tasks, day/night, Gemini chat + TTS. Piano melodies and all speech unlock their audio on the first tap (iOS 12 gets touch-event unlocks — it never fires pointer events).
 
 ## Quick start
 
@@ -39,7 +57,7 @@ npm run build      # tsc + vite build → dist/
 npm run preview    # serve dist/
 ```
 
-## Deploy to Vercel (hosting for the Air)
+## Deploy to Vercel
 
 This repo is ready for Vercel zero-config — it runs `npm run build` and serves `dist/`.
 
@@ -60,7 +78,7 @@ This repo is ready for Vercel zero-config — it runs `npm run build` and serves
    - **Chat API key** — Gemini flash-lite
    - **Voice API key** — TTS, leave empty to reuse chat key
 
-Without a chat key she still renders and wanders, but replies ask for a key.
+Without a chat key she still renders, wanders, and plays piano — but replies ask for a key.
 
 ## Using on iPad Air 1 (iOS 12.5.7)
 
@@ -69,9 +87,11 @@ Without a chat key she still renders and wanders, but replies ask for a key.
 | Chat | Type in bottom pill, Enter |
 | Voice in | Tap mic button, speak (wake word disabled — iOS has no SpeechRecognition) |
 | Voice out | Gemini TTS → falls back to iOS speech synthesis → mimes + face-zoom if both fail |
+| Piano | Automatic (rare), say *"play piano"*, or the piano toggle in ⚙ |
+| Timer / Stopwatch / Alarms | Click the clock — alarms play the morning-keys track |
 | Personality | Settings → Personality (Warm / Playful / Calm or custom) |
-| Voice | Settings → AI voice (Sulafat, Leda, Aoede, Puck, Kore, Fenrir, Charon, Zephyr) |
-| Day / night | ☀/☾ button or Auto (07–19 day) |
+| AI voice | Settings → AI voice (Sulafat, Leda, Aoede, Puck, Kore, Fenrir, Charon, Zephyr) |
+| Day / night | ☀/☾ button or Auto (07–19 day) — the city backdrop stays in both |
 
 Tip: **Add to Home Screen** from Safari for fullscreen, then launch from the icon.
 
@@ -81,25 +101,32 @@ Tip: **Add to Home Screen** from Safari for fullscreen, then launch from the ico
 index.html            app shell, legacy sniff before paint
 vite.config.ts        target es2015, cssTarget ios12
 src/
-  main.ts             UI + Air mic hint (isLegacyIOS)
-  avatar.ts           three.js scene + detectLegacy() + WebGL1 fallbacks
-  gemini.ts           Gemini flash-lite, RPM throttle, 429 backoff
+  main.ts             UI, clock tools (timer/stopwatch/alarms), chat ops
+  avatar.ts           three.js scene, piano staging, detectLegacy() + WebGL1 fallbacks
+  pianoSong.ts        WebAudio music box — 3 melodies for the piano performances
+  gemini.ts           Gemini flash-lite, RPM throttle, 429 backoff, JSON ops parse
   aiVoice.ts          Gemini TTS (PCM) → AudioContext fallback
   speech.ts           Web Speech (iOS stubbed → tap-to-talk)
-  settings.ts         localStorage persistence
-  style.css           html.legacy kills backdrop-filter
-public/model/ai_ohto.glb
+  settings.ts         localStorage persistence + persona suffixes (tasks/clock ops)
+  style.css           html.legacy kills backdrop-filter; night-city backdrop
+public/
+  model/ai_ohto.glb   character
+  model/piano.glb     grand piano prop
+  model/anim_piano.glb piano performance clip (retargeted at runtime)
+  bg.jpg              night-city backdrop
+  audio/good-morning.mp3  alarm track
 ```
 
-Rendering notes: `NoToneMapping` fallback is fine because skin/hoodie materials are `toneMapped:false` (`src/avatar.ts:259-274`). The look stays emissive/cel-shaded even without AgX.
+Rendering notes: `NoToneMapping` fallback is fine because skin/hoodie materials are `toneMapped:false`. The look stays emissive/cel-shaded even without AgX. The stage background is a CSS photo layer — the canvas renders transparent over it, and the rug disc under her feet is the only floor geometry.
 
 ## Limitations
 
-- **Wake word doesn't exist on iOS** — not a bug, Apple never shipped the API. Tap-to-talk is the native path (`src/speech.ts:28`).
+- **Wake word doesn't exist on iOS** — not a bug, Apple never shipped the API. Tap-to-talk is the native path (`src/speech.ts`).
 - **Mic needs HTTPS** — `http://` will silently fail on iOS. Vercel gives you HTTPS.
-- **Free-tier quotas** — Gemini chat/TTS 429s show “Busy — try again in a bit.” and auto-fallback to local voice.
-- **If the model OOMs** (rare on Air 1 with 5.1MB), open an issue — next step is a Draco + 512px legacy GLB (~1.2MB). Not shipped yet to keep her visually identical.
+- **Free-tier quotas** — Gemini chat/TTS 429s show "Busy — try again in a bit." and auto-fallback to local voice.
+- **First tap unlocks audio** — iOS suspends WebAudio until a gesture; piano melodies start after your first tap on the page.
+- **If the model OOMs** (rare on Air 1), open an issue — next step is a Draco + 512px legacy GLB. Not shipped yet to keep her visually identical.
 
 ## Credits
 
-Saphira model: Mixamo-rigged `saphira_mixamo_rigged.blend` → `ai_ohto.glb` (33-bone `mixamorig:`). Main repo: `/touhidsiddiqueeraj-bit/Saphira` (if you have one).
+Saphira model: Mixamo-rigged `saphira_mixamo_rigged.blend` → `ai_ohto.glb` (33-bone `mixamorig:`). Grand piano: rebuilt from a stock 3ds-Max piano FBX, rescaled and restyled. Night-city backdrop and morning-keys track: user-supplied. Main repo: `/touhidsiddiqueeraj-bit/Saphira` (if you have one).

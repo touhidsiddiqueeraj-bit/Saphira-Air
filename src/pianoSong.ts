@@ -21,6 +21,8 @@ function ensure(): AudioContext | null {
 try {
   const unlock = () => { try { ensure(); } catch {} };
   window.addEventListener('pointerdown', unlock);
+  window.addEventListener('touchstart', unlock, {passive:true});
+  window.addEventListener('touchend', unlock);
   window.addEventListener('keydown', unlock);
 } catch {}
 

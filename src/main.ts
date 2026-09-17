@@ -217,6 +217,8 @@ function renderApp(){
         <label class="field"><span>Mic</span><select id="micEnabled"><option value="no">Off</option><option value="yes">On</option></select></label>
         <label class="field"><span>Voice <small style="opacity:.6;font-weight:400">— her spoken replies</small></span><select id="voiceEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
         <label class="field"><span>Piano <small style="opacity:.6;font-weight:400">— she plays about once every 5 minutes</small></span><select id="pianoEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
+        <div class="field"><span>Piano every <small style="opacity:.6;font-weight:400">— minutes between performances</small></span><div class="row"><input id="pianoEvery" type="number" min="1" max="60" step="1" style="width:84px;flex:none" placeholder="5"/></div></div>
+        <div class="field"><span>Piano length <small style="opacity:.6;font-weight:400">— performance seconds</small></span><div class="row"><input id="pianoLength" type="number" min="10" max="120" step="1" style="width:84px;flex:none" placeholder="30"/></div></div>
         <div class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up on a timer</small></span><div class="row" style="display:flex;gap:8px"><select id="chatterEnabled" style="flex:1"><option value="yes">On</option><option value="no">Off</option></select><input id="chatterMinutes" type="number" min="1" max="120" step="1" title="Minutes between lines" style="width:84px;flex:none" placeholder="min"/></div></div>
         <div class="row">
           <button class="btn primary" id="saveBtn">Save</button>
@@ -378,7 +380,11 @@ function wire(){
 
   (document.getElementById('voiceEnabled') as HTMLSelectElement).value = settings.voice===false?'no':'yes';
   (document.getElementById('pianoEnabled') as HTMLSelectElement).value = settings.piano===false?'no':'yes';
+  (document.getElementById('pianoEvery') as HTMLInputElement).value = String(settings.pianoEveryMinutes ?? 5);
+  (document.getElementById('pianoLength') as HTMLInputElement).value = String(settings.pianoLengthSeconds ?? 30);
   tts.setMuted(settings.voice===false);
+  avatar?.setPianoEvery(settings.pianoEveryMinutes ?? 5);
+  avatar?.setPianoLength(settings.pianoLengthSeconds ?? 30);
 
   (document.getElementById('apiKey') as HTMLInputElement).value = settings.apiKey;
   (document.getElementById('ttsKey') as HTMLInputElement).value = settings.ttsApiKey || '';
@@ -477,9 +483,11 @@ function save(){
   const micOn=(document.getElementById('micEnabled') as HTMLSelectElement).value==='yes';
   const voiceOn=(document.getElementById('voiceEnabled') as HTMLSelectElement).value!=='no';
   const pianoOn=(document.getElementById('pianoEnabled') as HTMLSelectElement).value!=='no';
+  const pianoEvery=Math.min(60, Math.max(1, parseInt((document.getElementById('pianoEvery') as HTMLInputElement).value)||5));
+  const pianoLength=Math.min(120, Math.max(10, parseInt((document.getElementById('pianoLength') as HTMLInputElement).value)||30));
   const chatter=(document.getElementById('chatterEnabled') as HTMLSelectElement).value!=='no';
   const chatterMinutes=Math.min(120, Math.max(1, parseInt((document.getElementById('chatterMinutes') as HTMLInputElement).value)||15));
-  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes; settings.voice=voiceOn; settings.piano=pianoOn;
+  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes; settings.voice=voiceOn; settings.piano=pianoOn; settings.pianoEveryMinutes=pianoEvery; settings.pianoLengthSeconds=pianoLength;
   saveSettings(settings);
   startChatter();
   avatar?.setZoom(zoom);
@@ -488,6 +496,8 @@ function save(){
   tts.setMuted(!voiceOn);
   // piano off — end a performance that's still running
   if(!pianoOn) avatar?.stopPiano();
+  avatar?.setPianoEvery(pianoEvery);
+  avatar?.setPianoLength(pianoLength);
   gemini.setRpm(settings.rpmLimit);
   wake.setWakeWord(wakeWord);
   wakeEnabled=micOn;
@@ -590,6 +600,7 @@ async function handleUser(text:string){
     // dance/piano only on explicit request — never autonomous
     if(/danc|hip[\s-]?hop|disco|bhangra/i.test(text)) avatar?.playGest('wave');
     else if(/\bpiano\b|play (some |a |the )?(music|song|tune|melody|keys)|serenade/i.test(text)) avatar?.playGest('piano');
+    else if(reply.gesture==='piano') avatar?.playGest('piano');
     else avatar?.setExpression(reply.expression, reply.intensity, reply.gesture);
     if(reply.tasks) applyTaskOps(reply.tasks);
     applyTimeOps(reply);

@@ -3,14 +3,14 @@ export type SaphiraReply = {
   text: string;
   expression: 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking'|'annoyed'|'blush';
   intensity: number;
-  gesture: 'none'|'wave'|'nod'|'shrug';
+  gesture: 'none'|'wave'|'nod'|'shrug'|'piano';
   tasks?: { add?: string[]; complete?: string[]; remove?: string[] };
   timers?: { setSeconds?: number; cancel?: boolean; list?: boolean };
   alarms?: { add?: string; remove?: string; list?: boolean };
 };
 
 const VALID_EXPR = new Set(['neutral','happy','excited','sad','surprised','thinking','annoyed','blush']);
-const VALID_GEST = new Set(['none','wave','nod','shrug']);
+const VALID_GEST = new Set(['none','wave','nod','shrug','piano']);
 
 export class GeminiClient {
   private lastCall = 0;

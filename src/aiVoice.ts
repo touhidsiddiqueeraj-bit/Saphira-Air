@@ -36,6 +36,9 @@ export class SaphiraVoice {
     try{
       const warm=()=> this.unlock();
       window.addEventListener('pointerdown', warm, {passive:true});
+      // iOS 12 never fires pointer events — touch gestures are the unlock there
+      window.addEventListener('touchstart', warm, {passive:true});
+      window.addEventListener('touchend', warm);
       window.addEventListener('keydown', warm);
     }catch{}
   }
