@@ -10,6 +10,7 @@ export type Settings = {
   chatter: boolean; // idle voice lines
   chatterMinutes: number; // idle chatter interval in minutes
   zoom: number; // camera zoom, 0.7 (far) – 1.6 (close), 1 = default framing
+  sound: boolean;   // master audio: her voice + the piano melody
 };
 
 const LS_KEY = 'saphira_settings_v2';
@@ -56,7 +57,12 @@ function defaults(): Settings {
     chatter: true,
     chatterMinutes: 15,
     zoom: 1,
+    sound: true,
   };
+}
+// live read for audio modules (piano melody, voice) — defaults to on
+export function soundOn(): boolean {
+  try{ return loadSettings().sound !== false; }catch{ return true; }
 }
 export function saveSettings(s: Settings){
   localStorage.setItem(LS_KEY, JSON.stringify(s));

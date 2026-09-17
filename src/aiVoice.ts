@@ -23,6 +23,7 @@ export class SaphiraVoice {
   private ctx: AudioContext | null = null;
   private src: AudioBufferSourceNode | null = null;
   private seq = 0;
+  private muted = false;
   private getKey: () => string;
   private onStatus: (s:TTSStatus)=>void;
   private failure: TTSFailure = null;
@@ -44,6 +45,8 @@ export class SaphiraVoice {
 
   setAiVoice(name:string){ this.voice=name; }
   setRate(r:number){ this.rate=r; }
+  // settings sound toggle — cuts in-flight speech and silences future speaks
+  setMuted(m:boolean){ this.muted=m; if(m) this.stop(); }
 
   // call from a user gesture so the AudioContext is allowed to start
   unlock(){
@@ -75,6 +78,7 @@ export class SaphiraVoice {
     const my=++this.seq;
     const clean=(text||'').trim();
     if(!clean) return true;
+    if(this.muted){ this.onStatus('idle'); return true; } // sound off — reply stays text-only
     this.failure=null;
     const key=this.getKey().trim();
     if(!key){ this.failure='key'; return false; }

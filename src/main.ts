@@ -4,6 +4,7 @@ import { GeminiClient } from './gemini';
 import { SaphiraVoice, AI_VOICES } from './aiVoice';
 import { WakeListener } from './speech';
 import { loadSettings, saveSettings, ttsKey, PRESETS } from './settings';
+import { stopPianoPhrase } from './pianoSong';
 
 const settings = loadSettings();
 let avatar: SaphiraAvatar | null = null;
@@ -116,6 +117,7 @@ function renderApp(){
         <div class="field"><span>Rate</span><div class="row"><input id="rate" type="range" min="0.7" max="1.3" step="0.05" style="flex:1"/></div></div>
         <div class="field"><span>Zoom <small style="opacity:.6;font-weight:400">— closer or farther camera</small></span><div class="row"><input id="zoom" type="range" min="0.7" max="1.6" step="0.05" style="flex:1"/></div></div>
         <label class="field"><span>Mic</span><select id="micEnabled"><option value="no">Off</option><option value="yes">On</option></select></label>
+        <label class="field"><span>Sound <small style="opacity:.6;font-weight:400">— her voice &amp; the piano</small></span><select id="soundEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
         <div class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up on a timer</small></span><div class="row" style="display:flex;gap:8px"><select id="chatterEnabled" style="flex:1"><option value="yes">On</option><option value="no">Off</option></select><input id="chatterMinutes" type="number" min="1" max="120" step="1" title="Minutes between lines" style="width:84px;flex:none" placeholder="min"/></div></div>
         <div class="row">
           <button class="btn primary" id="saveBtn">Save</button>
@@ -226,6 +228,9 @@ function wire(){
   (document.getElementById('micEnabled') as HTMLSelectElement).value = wakeEnabled?'yes':'no';
   updateMic();
 
+  (document.getElementById('soundEnabled') as HTMLSelectElement).value = settings.sound===false?'no':'yes';
+  tts.setMuted(settings.sound===false);
+
   (document.getElementById('apiKey') as HTMLInputElement).value = settings.apiKey;
   (document.getElementById('ttsKey') as HTMLInputElement).value = settings.ttsApiKey || '';
   (document.getElementById('wakeWord') as HTMLInputElement).value = settings.wakeWord;
@@ -321,13 +326,17 @@ function save(){
   const rate=parseFloat((document.getElementById('rate') as HTMLInputElement).value);
   const zoom=Math.min(1.6, Math.max(0.7, parseFloat((document.getElementById('zoom') as HTMLInputElement).value) || 1));
   const micOn=(document.getElementById('micEnabled') as HTMLSelectElement).value==='yes';
+  const soundOn=(document.getElementById('soundEnabled') as HTMLSelectElement).value!=='no';
   const chatter=(document.getElementById('chatterEnabled') as HTMLSelectElement).value!=='no';
   const chatterMinutes=Math.min(120, Math.max(1, parseInt((document.getElementById('chatterMinutes') as HTMLInputElement).value)||15));
-  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes;
+  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes; settings.sound=soundOn;
   saveSettings(settings);
   startChatter();
   avatar?.setZoom(zoom);
   tts.setAiVoice(aiVoice); tts.setRate(rate);
+  // sound off — cut whatever is playing right now (her voice, piano melody)
+  tts.setMuted(!soundOn);
+  if(!soundOn) stopPianoPhrase();
   gemini.setRpm(settings.rpmLimit);
   wake.setWakeWord(wakeWord);
   wakeEnabled=micOn;
@@ -427,8 +436,10 @@ async function handleUser(text:string){
     if(history.length>12) history=history.slice(-12);
     thinkEl.remove();
     addBubble('bot', reply.text);
-    // dance only on explicit request — never autonomous
+    // dance/piano/texting only on explicit request — never autonomous
     if(/danc|hip[\s-]?hop|disco|bhangra/i.test(text)) avatar?.playGest('wave');
+    else if(/\bpiano\b|play (some |a |the )?(music|song|tune|melody|keys)|serenade/i.test(text)) avatar?.playGest('piano');
+    else if(/\b(text|texting|phone|smartphone|s22|sms)\b/i.test(text)) avatar?.playGest('texting');
     else avatar?.setExpression(reply.expression, reply.intensity, reply.gesture);
     if(reply.tasks) applyTaskOps(reply.tasks);
     // zoom + mouth loop start instantly while TTS PCM is still fetching
@@ -450,3 +461,13 @@ async function handleUser(text:string){
 }
 
 renderApp();
+
+// demo deep-links: ?piano=1 / ?texting=1 auto-trigger once she's loaded
+try{
+  window.addEventListener('saphira:load', (e:any)=>{
+    if(!(e.detail && e.detail.done) || e.detail.error) return;
+    const q = new URLSearchParams(location.search);
+    const what = q.has('piano') ? 'piano' : (q.has('texting') ? 'texting' : null);
+    if(what) window.setTimeout(()=>{ (window as any).__saphiraAvatar?.playGest(what); }, what==='piano' ? 2500 : 1500);
+  });
+}catch{}

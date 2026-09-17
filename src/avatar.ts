@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { playPianoPhrase, stopPianoPhrase } from './pianoSong';
 
 export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking'|'annoyed'|'blush';
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg9';
+export const BUILD = 'air-dbg13';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -24,6 +25,113 @@ const NIGHT_KEY = new THREE.Color('#9fb4ff');
 // wander targets stay on the ground disc (r=1.7) and inside the camera frame
 const WANDER_X = 1.05, WANDER_Z_MIN = -0.35, WANDER_Z_MAX = 0.65;
 const WANDER_R = 0.95; // max radius from stage center — keeps feet on the disc
+// piano ensemble staging, measured against the piano clip's seated pose
+// (flipped 180° so she plays the KEYBOARD side: keys just west of her seat,
+// case extending west behind them). Everything below is in app/world meters.
+const SIT = { x: 0.35, z: 0.02, rotY: -Math.PI / 2 };
+const PIANO_REL = { x: -0.0948, z: 1.0407, rotY: 3.2087 }; // piano root in her sit frame
+const PIANO_POS = (() => {
+  const c = Math.cos(SIT.rotY), s = Math.sin(SIT.rotY);
+  return {
+    x: SIT.x + PIANO_REL.x * c + PIANO_REL.z * s,
+    z: SIT.z - PIANO_REL.x * s + PIANO_REL.z * c,
+  };
+})();
+const PIANO_ROT = SIT.rotY + PIANO_REL.rotY;
+// deliberate piano shot: from the back side of the piano, elevated over the
+// case — keys + case edge in the foreground, zoom on her face as she plays
+const PIANO_CAM_POS = new THREE.Vector3(SIT.x - 2.0, 1.62, SIT.z + 0.28);
+const PIANO_CAM_LOOK = new THREE.Vector3(SIT.x + 0.1, 1.42, SIT.z + 0.02);
+// phone: while texting, a per-frame bridge keeps it spanning her two palms
+// (position recomputed from the live hand bones — it can never float off)
+const _ph1 = new THREE.Vector3(), _ph2 = new THREE.Vector3(), _phLong = new THREE.Vector3();
+const _phN = new THREE.Vector3(), _phX = new THREE.Vector3(), _phMid = new THREE.Vector3();
+const _phM = new THREE.Matrix4(), _phRel = new THREE.Matrix4(), _phS = new THREE.Vector3();
+// wandering feet stay out of the piano corner
+const PIANO_KEEP = { x: -0.55, z: 0.0, r: 1.45 };
+// measured world footprint of the placed prop (+margin) — walk paths route
+// around this box instead of straight through it
+const PIANO_BOX = { minX: -1.75, maxX: 0.55, minZ: -1.0, maxZ: 1.25 };
+
+function inPianoBox(x: number, z: number){
+  return x > PIANO_BOX.minX && x < PIANO_BOX.maxX && z > PIANO_BOX.minZ && z < PIANO_BOX.maxZ;
+}
+function segHitsPiano(sx: number, sz: number, tx: number, tz: number){
+  if(inPianoBox(sx, sz) || inPianoBox(tx, tz)) return true;
+  const dx = tx - sx, dz = tz - sz;
+  let t0 = 0, t1 = 1;
+  const slabs: [number, number, number, number][] = [
+    [sx, dx, PIANO_BOX.minX, PIANO_BOX.maxX],
+    [sz, dz, PIANO_BOX.minZ, PIANO_BOX.maxZ],
+  ];
+  for(const [p, d, lo, hi] of slabs){
+    if(Math.abs(d) < 1e-6){ if(p < lo || p > hi) return false; }
+    else {
+      let a = (lo - p) / d, b = (hi - p) / d;
+      if(a > b){ const t = a; a = b; b = t; }
+      t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+      if(t0 > t1) return false;
+    }
+  }
+  return true;
+}
+function pianoCornerDetour(sx: number, sz: number, tx: number, tz: number){
+  let bx = PIANO_BOX.maxX, bz = PIANO_BOX.maxZ, best = Infinity;
+  for(const cx of [PIANO_BOX.minX, PIANO_BOX.maxX]){
+    for(const cz of [PIANO_BOX.minZ, PIANO_BOX.maxZ]){
+      // keep detours on the visible disc
+      const len = Math.hypot(cx, cz);
+      const k = len > 1.6 ? 1.6/len : 1;
+      const cost = Math.hypot(cx - sx, cz - sz) + Math.hypot(tx - cx*k, tz - cz*k);
+      if(cost < best){ best = cost; bx = cx*k; bz = cz*k; }
+    }
+  }
+  return { x: bx, z: bz };
+}
+
+// Mixamo clips ship in the FBX import frame (cm-scale armature node); Saphira
+// plays in meters. Verified 3mm vs Blender ground truth: bake the armature
+// node's world matrix into Hips tracks, cm->m on the rest, play the rest
+// verbatim. three.js has no rest/pose split — hierarchy + locals is everything.
+function convertClipForSaphira(gltf: any): THREE.AnimationClip[] {
+  const clip = (gltf.animations as THREE.AnimationClip[])[0];
+  if (!clip) return [];
+  let armNode: THREE.Object3D | null = null;
+  const bones: THREE.Object3D[] = [];
+  gltf.scene.traverse((o: THREE.Object3D) => { if (o.type === 'Bone') bones.push(o); });
+  if (!bones.length) return [clip];
+  let top: THREE.Object3D = bones[0];
+  while (top.parent && top.parent !== gltf.scene) top = top.parent;
+  armNode = top;
+  armNode.updateWorldMatrix(true, false);
+  const M = armNode.matrixWorld.clone();
+  const Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3();
+  M.decompose(P, Q, S);
+  const out: THREE.AnimationClip[] = [];
+  // NOTE: track names from GLTFLoader are already colon-stripped (mixamorigHips)
+  for (const t of clip.tracks as any[]) {
+    const dot = t.name.lastIndexOf('.');
+    const bone = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
+    const nt = t.clone();
+    if (/Hips/.test(bone)) {
+      const n = t.values.length / (prop === 'quaternion' ? 4 : 3);
+      for (let i = 0; i < n; i++) {
+        if (prop === 'position') {
+          const v = new THREE.Vector3(t.values[i * 3], t.values[i * 3 + 1], t.values[i * 3 + 2]).applyMatrix4(M);
+          nt.values[i * 3] = v.x; nt.values[i * 3 + 1] = v.y; nt.values[i * 3 + 2] = v.z;
+        } else if (prop === 'quaternion') {
+          const q = new THREE.Quaternion(t.values[i * 4], t.values[i * 4 + 1], t.values[i * 4 + 2], t.values[i * 4 + 3]);
+          q.premultiply(Q).normalize();
+          nt.values[i * 4] = q.x; nt.values[i * 4 + 1] = q.y; nt.values[i * 4 + 2] = q.z; nt.values[i * 4 + 3] = q.w;
+        }
+      }
+    } else if (prop === 'position') {
+      for (let i = 0; i < nt.values.length; i++) nt.values[i] *= 0.01;
+    }
+    out.push(nt);
+  }
+  return [new THREE.AnimationClip(clip.name, -1, out as any)];
+}
 
 // expression -> mood glow color (null = no tint, just the theme light)
 const MOODS: Record<Expression, string | null> = {
@@ -56,8 +164,22 @@ export class SaphiraAvatar {
   private framed = false;
   private onFinish = (e:any)=>{
     if(this.oneShot && e.action===this.oneShot){
+      const was = this.oneShot.getClip().name.toLowerCase();
       this.oneShot=null;
       this.toBase(0.35);
+      if(was==='texting' && this.phone) this.phone.visible=false;
+      // piano ring-out: the phrase's last notes keep decaying while she gets
+      // up — don't stopPianoPhrase here, the song cleans itself up (13.5s)
+      if(was==='piano' && this.staging){
+        this.staging='';
+        // step out from the bench toward the user (standing put puts her legs
+        // through the bench), clear of the prop footprint
+        this.hasVia=false;
+        this.wanderTarget.set(SIT.x + 0.08, 0, SIT.z + 1.25);
+        const w=this.acts.get('wander') ?? this.acts.get('walk');
+        if(w){ w.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.4).play(); this.wanderMode='walk'; }
+        else this.wanderMode='turnBack';
+      }
     }
   };
   private talking=false;
@@ -113,6 +235,19 @@ export class SaphiraAvatar {
   private wanderMode: 'none'|'walk'|'turnBack' = 'none';
   private wanderTarget = new THREE.Vector3();
   private lifeTimer: number | null = null;
+
+  // piano & texting: clips + props load async, gated by the ready flags.
+  // staging walks her to the bench; cleared when the piano clip finishes.
+  private phone: THREE.Object3D | null = null;
+  private pianoReady = false;
+  private phoneReady = false;
+  private staging: '' | 'piano-walk' | 'piano-turn' | 'piano-play' = '';
+  // hand bones for the per-frame phone bridge
+  private lhBone: THREE.Object3D | null = null;
+  private rhBone: THREE.Object3D | null = null;
+  // intermediate waypoint when a walk path would cross the piano footprint
+  private via = new THREE.Vector3();
+  private hasVia = false;
 
   // ponytail: legacy = iPad Air 1 / iOS 12 — WebGL1 + 1GB RAM, kill the expensive bits but keep her look
   private isLegacy = false;
@@ -174,6 +309,8 @@ export class SaphiraAvatar {
 
   private detectLegacy(): boolean {
     try{
+      // test escape hatch: ?legacy=1 forces the Air path (UA can't be spoofed easily)
+      try{ if(new URLSearchParams(location.search).has('legacy')) return true; }catch{}
       const ua = navigator.userAgent||'';
       const isIOS12 = /OS 12_|CPU OS 12_/.test(ua) || /iPad.*OS 12_/.test(ua);
       const lowMem = (navigator as any).deviceMemory && (navigator as any).deviceMemory <= 2;
@@ -430,6 +567,8 @@ export class SaphiraAvatar {
       this.neckBone = findBone(['mixamorig:Neck','Neck','neck']) ?? null;
       this.spineBone = findBone(['mixamorig:Spine','mixamorig:Spine1','Spine','spine']) ?? null;
       this.hipsBone = findBone(['mixamorig:Hips','Hips','hips']) ?? null;
+      this.lhBone = findBone(['mixamorig:LeftHand']) ?? null;
+      this.rhBone = findBone(['mixamorig:RightHand']) ?? null;
       if(this.hipsBone){ this.hipsBindX = this.hipsBone.position.x; this.hipsBindZ = this.hipsBone.position.z; }
       // sampled in Blender (foot minZ, rest=0.017): idle/nod grounded, but every
       // Mixamo clip carries its own root height — talk/walk/wander/wave/raise sit
@@ -453,8 +592,52 @@ export class SaphiraAvatar {
       const size2 = new THREE.Vector3(); box2.getSize(size2);
       this.modelH = size2.y;
       this.blendTarget = this.resolved()==='night' ? 1 : 0;
+      // spawn east of the piano's keyboard — the flipped grand's keybed passes
+      // through the old origin spot, and she mustn't idle inside it
+      this.model.position.set(0.55, this.model.position.y, 0.35);
       this.fitCamera();
       this.scheduleLife();
+      // ---- piano & texting clips: Mixamo anim GLBs converted at runtime ----
+      const registerClips = (gltf:any)=>{
+        if(!this.mixer) return;
+        for(const c of convertClipForSaphira(gltf)){
+          const a=this.mixer.clipAction(c);
+          a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished=true;
+          this.acts.set(c.name.toLowerCase(), a);
+        }
+      };
+      loader.load('/model/anim_piano.glb', (gltf:any)=>{ registerClips(gltf); }, undefined, ()=>{});
+      loader.load('/model/anim_texting.glb', (gltf:any)=>{ registerClips(gltf); }, undefined, ()=>{});
+      // ---- grand piano prop (placement measured against her seated pose) ----
+      loader.load('/model/piano.glb', (gltf:any)=>{
+        const p = gltf.scene as THREE.Group;
+        p.position.set(PIANO_POS.x, 0, PIANO_POS.z);
+        p.rotation.y = PIANO_ROT;
+        p.traverse((o:any)=>{
+          if(o.isMesh){
+            const mats = Array.isArray(o.material)? o.material : [o.material];
+            mats.forEach((m:any)=>{ if(m.isMeshStandardMaterial){ m.metalness=0; m.envMapIntensity=0; } });
+          }
+        });
+        // no bench: she performs behind the case, hidden by the camera shot
+        for(const n of ['Piano_BenchFrame','Piano_BenchCushion']){
+          const b = p.getObjectByName(n); if(b) p.remove(b);
+        }
+        this.scene.add(p);
+        this.pianoReady = true;
+      }, undefined, ()=>{});
+      // ---- phone prop: rides her left hand while texting ----
+      loader.load('/model/phone.glb', (gltf:any)=>{
+        const ph = gltf.scene as THREE.Group;
+        ph.traverse((o:any)=>{
+          if(o.isMesh) o.frustumCulled = false;
+        });
+        const hand = findBone(['mixamorig:LeftHand']);
+        if(!hand) return;
+        ph.visible = false;
+        hand.add(ph);
+        this.phone = ph; this.phoneReady = true;
+      }, undefined, ()=>{});
       window.dispatchEvent(new CustomEvent('saphira:load', {detail:{pct:100, done:true}}));
     }, (e:any)=>{
       if(e.lengthComputable){
@@ -506,12 +689,15 @@ export class SaphiraAvatar {
     const idle = this.wanderMode==='none' && !this.busy && !this.talking;
     if(idle){
       const r=Math.random();
-      // walks + hand raises + yawns, all Mixamo. Dance/laugh (wave/wave_small)
-      // never play on their own — only on explicit chat request via playGest.
-      if(r<0.50){ this.startWander(); }
-      else if(r<0.70){ this.playOnce('raise'); }
-      else if(r<0.88){ this.playOnce('yawn'); }
-      else if(r<0.94){ this.startGlance(); }
+      // walks + hand raises + yawns + the occasional piano piece or phone
+      // check. Dance/laugh (wave/wave_small) never play on their own — only
+      // on explicit chat request via playGest.
+      if(r<0.38){ this.startWander(); }
+      else if(r<0.54){ this.playOnce('raise'); }
+      else if(r<0.66){ this.playOnce('yawn'); }
+      else if(r<0.79 && this.pianoReady){ this.startPiano(); }
+      else if(r<0.93 && this.phoneReady){ this.playTexting(); }
+      else if(r<0.96){ this.startGlance(); }
       else {
         this.tiltAmt = (Math.random()<0.5?-1:1)*0.09;
         this.tiltUntil = performance.now()/1000 + 2.2 + Math.random()*1.5;
@@ -519,24 +705,52 @@ export class SaphiraAvatar {
     }
     this.scheduleLife();
   }
+  // pick a wander target that isn't inside the piano zone, plus a waypoint
+  // when the straight path there would cross the prop footprint
+  private setVia(tx:number, tz:number){
+    const p=this.model!.position;
+    const sIn = inPianoBox(p.x, p.z), tIn = inPianoBox(tx, tz);
+    if(sIn && !tIn){
+      // standing within the footprint margin (home is inside it) — step out
+      // through the nearest edge first, then the coast is clear
+      const cx = Math.min(Math.max(p.x, PIANO_BOX.minX + 0.1), PIANO_BOX.maxX - 0.1);
+      const cz = Math.min(Math.max(p.z, PIANO_BOX.minZ + 0.1), PIANO_BOX.maxZ - 0.1);
+      const opts = [
+        { d: PIANO_BOX.maxX + 0.1 - p.x, x: PIANO_BOX.maxX + 0.1, z: cz },
+        { d: p.x - (PIANO_BOX.minX - 0.1), x: PIANO_BOX.minX - 0.1, z: cz },
+        { d: PIANO_BOX.maxZ + 0.1 - p.z, x: cx, z: PIANO_BOX.maxZ + 0.1 },
+        { d: p.z - (PIANO_BOX.minZ - 0.1), x: cx, z: PIANO_BOX.minZ - 0.1 },
+      ].sort((a, b) => a.d - b.d)[0];
+      this.via.set(opts.x, 0, opts.z);
+      this.hasVia = true;
+    } else if(!sIn && segHitsPiano(p.x, p.z, tx, tz)){
+      const c = pianoCornerDetour(p.x, p.z, tx, tz);
+      this.via.set(c.x, 0, c.z);
+      this.hasVia = true;
+    } else this.hasVia = false;
+  }
   private startWander(){
     if(!this.model || !this.acts.has('wander')) return;
     const p=this.model.position;
-    let tx:number, tz:number;
-    if(Math.abs(p.x)>0.5 || Math.abs(p.z)>0.45){
-      // drifted far — cross to the opposite side for a long walk home
-      tx = (p.x>0?-1:1)*(0.6+Math.random()*0.45);
+    let tx=0, tz=0, ok=false;
+    for(let tries=0; tries<10 && !ok; tries++){
+      if(Math.abs(p.x)>0.5 || Math.abs(p.z)>0.45){
+        // drifted far — cross to the opposite side for a long walk home
+        tx = (p.x>0?-1:1)*(0.6+Math.random()*0.45);
+      } else {
+        // pick a far edge so walks last 3-5s at 0.3 m/s
+        tx = (Math.random()<0.5?-1:1)*(0.65+Math.random()*0.4);
+      }
       tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
-    } else {
-      // pick a far edge so walks last 3-5s at 0.3 m/s
-      tx = (Math.random()<0.5?-1:1)*(0.65+Math.random()*0.4);
-      tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
+      if(Math.hypot(tx-p.x, tz-p.z) < 0.6) tx = -tx; // too close — go the other way
+      // clamp onto the disc so she never steps off the edge
+      const tr = Math.hypot(tx, tz);
+      if(tr > WANDER_R){ tx *= WANDER_R/tr; tz *= WANDER_R/tr; }
+      ok = !inPianoBox(tx, tz) && Math.hypot(tx-PIANO_KEEP.x, tz-PIANO_KEEP.z) >= PIANO_KEEP.r + 0.05;
     }
-    if(Math.hypot(tx-p.x, tz-p.z) < 0.6) tx = -tx; // too close — go the other way
-    // clamp onto the disc so she never steps off the edge
-    const tr = Math.hypot(tx, tz);
-    if(tr > WANDER_R){ tx *= WANDER_R/tr; tz *= WANDER_R/tr; }
+    if(!ok) return; // piano hogs the good spots this round — stay put
     this.wanderTarget.set(tx, 0, tz);
+    this.setVia(tx, tz);
     const a=this.acts.get('wander') ?? this.acts.get('walk');
     if(!a) return;
     a.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.35).play();
@@ -545,6 +759,32 @@ export class SaphiraAvatar {
   private startGlance(){
     this.glanceYaw = (Math.random()<0.5?-1:1)*(0.25+Math.random()*0.3);
     this.glanceUntil = performance.now()/1000 + 1.2 + Math.random()*1.6;
+  }
+  // walk to the bench, settle facing the keys, then play
+  private startPiano(){
+    if(!this.pianoReady || !!this.staging || this.busy || !this.acts.has('piano')) return;
+    this.staging='piano-walk';
+    this.wanderTarget.set(SIT.x, 0, SIT.z);
+    this.setVia(SIT.x, SIT.z);
+    const a=this.acts.get('wander') ?? this.acts.get('walk');
+    if(!a){ this.staging=''; return; }
+    a.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.35).play();
+    this.wanderMode='walk';
+  }
+  // pull out the phone right where she stands
+  private playTexting(){
+    if(!this.phoneReady || !!this.staging || this.busy || !this.acts.has('texting')) return;
+    if(this.wanderMode!=='none'){
+      (this.acts.get('wander') ?? this.acts.get('walk'))?.fadeOut(0.3);
+      this.wanderMode='none';
+      this.hasVia=false;
+    }
+    this.playOnce('texting');
+    // hands come up first — show the phone once they've settled, or it
+    // materializes inside her torso during the transition frames
+    if(this.phone) window.setTimeout(()=>{
+      if(this.oneShot===this.acts.get('texting') && this.phone) this.phone.visible=true;
+    }, 650);
   }
 
   // Chat replies never trigger body-language clips: this set has no true
@@ -561,7 +801,11 @@ export class SaphiraAvatar {
     else this.moodAmt = 0;
   }
   // expose for UI debug / manual triggers
-  playGest(name: string){ this.playOnce(name); }
+  playGest(name: string){
+    if(name==='piano'){ this.startPiano(); return; }
+    if(name==='texting'){ this.playTexting(); return; }
+    this.playOnce(name);
+  }
   listGestures(){ return [...this.acts.keys()]; }
   // one-line state for the ?debug=1 overlay
   debugInfo(){
@@ -572,6 +816,11 @@ export class SaphiraAvatar {
   get busy(){ return this.oneShot!==null; }
   setTalking(on:boolean){
     this.talking=on;
+    if(on && this.staging==='piano-walk'){
+      // heading to the piano mid-chat — abandon the trip
+      this.staging='';
+      this.hasVia=false;
+    }
     if(on && this.wanderMode!=='none'){
       // stop mid-step and turn to face the user; zoom waits until she faces us
       (this.acts.get('wander') ?? this.acts.get('walk'))?.fadeOut(0.3);
@@ -601,6 +850,33 @@ export class SaphiraAvatar {
     a.reset().setLoop(THREE.LoopOnce, 1);
     a.clampWhenFinished=true;
     a.fadeIn(0.25).play();
+  }
+
+  // per-frame phone bridge: while texting, the phone spans her two palms —
+  // recomputed from the live hand bones every frame, so it always reads as
+  // gripped no matter what the clip's hands are doing
+  private updatePhone(){
+    if(!this.phone || !this.phone.visible || !this.lhBone || !this.rhBone) return;
+    const lhw = this.lhBone.getWorldPosition(_ph1);
+    const rhw = this.rhBone.getWorldPosition(_ph2);
+    _phLong.subVectors(rhw, lhw);
+    if(_phLong.lengthSq() < 1e-6) return;
+    _phLong.normalize();
+    _phMid.addVectors(lhw, rhw).multiplyScalar(0.5);
+    _phMid.y -= 0.012;
+    // screen faces up, tilted a little toward her face
+    if(this.headBone) this.headBone.getWorldPosition(_ph1);
+    _phN.set(0,1,0).multiplyScalar(0.78).addScaledVector(_ph1.sub(_phMid).normalize(), 0.22).normalize();
+    _phN.addScaledVector(_phLong, -_phN.dot(_phLong)).normalize();
+    _phX.crossVectors(_phLong, _phN).normalize();
+    _phN.crossVectors(_phX, _phLong).normalize();
+    _phM.makeBasis(_phX, _phLong, _phN);
+    _phM.setPosition(_phMid);
+    const parent = this.phone.parent;
+    if(!parent) return;
+    parent.updateWorldMatrix(true, false);
+    _phRel.copy(parent.matrixWorld).invert().multiply(_phM);
+    _phRel.decompose(this.phone.position, this.phone.quaternion, _phS);
   }
 
   // procedural layer: head tracking, blinking, breathing — applied after the
@@ -709,19 +985,30 @@ export class SaphiraAvatar {
       this.lastLift = -1; // clamp inactive (bones missing) — visible in ?debug=1
     }
     this.applyLife(dt);
+    this.updatePhone();
     // wandering: walk to target, then turn back to face the user
     if(this.model && this.wanderMode!=='none'){
       const p=this.model.position;
       if(this.wanderMode==='walk'){
-        const dx=this.wanderTarget.x-p.x, dz=this.wanderTarget.z-p.z;
+        const gx = this.hasVia ? this.via.x : this.wanderTarget.x;
+        const gz = this.hasVia ? this.via.z : this.wanderTarget.z;
+        const dx=gx-p.x, dz=gz-p.z;
         const d=Math.hypot(dx,dz);
         const face=Math.atan2(dx,dz);
         this.model.rotation.y += shortAngle(face-this.model.rotation.y)*Math.min(1, dt*4);
         if(d>0.05){
           const step=Math.min(d, this.walkSpeed*dt);
           p.x += dx/d*step; p.z += dz/d*step;
+        } else if(this.hasVia){
+          this.hasVia=false; // rounded the piano corner — carry on to the target
+        } else if(this.staging==='piano-walk'){
+          // arrived at the bench — stop walking, turn toward the keys
+          this.staging='piano-turn';
+          this.wanderMode='none';
+          (this.acts.get('wander') ?? this.acts.get('walk'))?.fadeOut(0.3);
         } else {
           this.wanderMode='turnBack';
+          this.hasVia=false;
           (this.acts.get('wander') ?? this.acts.get('walk'))?.fadeOut(0.3);
         }
       } else {
@@ -733,17 +1020,35 @@ export class SaphiraAvatar {
         }
       }
     }
+    // piano staging: settle onto the bench mark facing the keys, then play
+    if(this.model && this.staging==='piano-turn'){
+      const dr = shortAngle(SIT.rotY - this.model.rotation.y);
+      this.model.rotation.y += dr*Math.min(1, dt*5);
+      if(Math.abs(dr)<0.05){
+        this.model.rotation.y = SIT.rotY;
+        this.model.position.x = SIT.x; this.model.position.z = SIT.z;
+        this.staging='piano-play';
+        this.playOnce('piano');
+        playPianoPhrase();
+      }
+    }
     // smooth camera dolly, following her wherever she stands on the stage
     if(this.framed){
       const m=this.model? this.model.position : {x:0,z:0};
-      const gp=this.faceMode?this.facePos:this.homePos;
-      const gl=this.faceMode?this.faceLook:this.homeLook;
-      this.camGoalTmp.set(gp.x+m.x, gp.y, gp.z+m.z);
       const k = 1 - Math.exp(-2.5*dt);
-      this.camera.position.lerp(this.camGoalTmp, k);
-      this.lookGoalTmp.set(gl.x+m.x, gl.y, gl.z+m.z);
-      this.lookGoalTmp.x += this.lookX*0.12;
-      this.lookCur.lerp(this.lookGoalTmp, k);
+      if(this.staging==='piano-play'){
+        // fixed 3/4 shot on the bench — no follow, no gaze parallax
+        this.camera.position.lerp(PIANO_CAM_POS, k);
+        this.lookCur.lerp(PIANO_CAM_LOOK, k);
+      } else {
+        const gp=this.faceMode?this.facePos:this.homePos;
+        const gl=this.faceMode?this.faceLook:this.homeLook;
+        this.camGoalTmp.set(gp.x+m.x, gp.y, gp.z+m.z);
+        this.camera.position.lerp(this.camGoalTmp, k);
+        this.lookGoalTmp.set(gl.x+m.x, gl.y, gl.z+m.z);
+        this.lookGoalTmp.x += this.lookX*0.12;
+        this.lookCur.lerp(this.lookGoalTmp, k);
+      }
       this.camera.lookAt(this.lookCur);
     }
     if(Math.abs(this.blend-this.blendTarget)>0.0005){
