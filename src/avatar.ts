@@ -237,6 +237,7 @@ export class SaphiraAvatar {
   private staging: '' | 'piano-walk' | 'piano-turn' | 'piano-play' = '';
   private lastPiano = Date.now();      // auto-piano cooldown stamp
   private pianoEndTimer: number | null = null;
+  private pianoRequested = false;      // explicit request: survives conversation
   private pianoEveryMs = 5*60*1000;    // settings: cooldown between performances
   private pianoLenS = 30;              // settings: performance length in seconds
   // intermediate waypoint when a walk path would cross the piano footprint
@@ -737,6 +738,7 @@ export class SaphiraAvatar {
     if(!this.pianoReady || !!this.staging || !this.acts.has('piano')) return;
     if(!pianoOn()) return;                      // piano toggled off in settings
     if(!force && Date.now()-this.lastPiano < this.pianoEveryMs) return; // cooldown
+    this.pianoRequested = force;   // explicit requests survive conversation
     // she might be mid-yawn — brush it aside, the walk takes over
     this.oneShot?.fadeOut(0.3);
     this.oneShot=null;
@@ -794,12 +796,13 @@ export class SaphiraAvatar {
   get busy(){ return this.oneShot!==null; }
   setTalking(on:boolean){
     this.talking=on;
-    if(on && this.staging==='piano-walk'){
-      // heading to the piano mid-chat — abandon the trip
+    // an autonomous walk to the piano yields to the conversation; an explicit
+    // one ("play piano") continues — she plays while her reply speaks
+    if(on && this.staging==='piano-walk' && !this.pianoRequested){
       this.staging='';
       this.hasVia=false;
     }
-    if(on && this.wanderMode!=='none'){
+    if(on && this.wanderMode!=='none' && this.staging!=='piano-walk'){
       // stop mid-step and turn to face the user; zoom waits until she faces us
       (this.acts.get('wander') ?? this.acts.get('walk'))?.fadeOut(0.3);
       this.wanderMode='turnBack';

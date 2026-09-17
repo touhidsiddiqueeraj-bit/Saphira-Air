@@ -256,9 +256,11 @@ function wire(){
   try{
     const fsBtn=document.getElementById('fsBtn') as HTMLButtonElement;
     const docAny=document.documentElement as any;
-    if(docAny.requestFullscreen || docAny.webkitRequestFullscreen){
+    const fsSupported = !!(docAny.requestFullscreen || docAny.webkitRequestFullscreen) && !isLegacyIOS;
+    if(fsSupported){
       fsBtn.style.display='grid';
       fsBtn.addEventListener('click', ()=>{
+        if(!fsSupported){ flashLive('Add Saphira to your Home Screen for fullscreen'); return; }
         try{
           const d:any = document.documentElement;
           const active = document.fullscreenElement || (document as any).webkitFullscreenElement;
