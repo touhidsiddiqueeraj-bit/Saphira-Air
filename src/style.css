@@ -3,8 +3,8 @@
 body{font-family:"Instrument Sans",system-ui,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
 button{font:inherit}
 
-/* fullscreen stage */
-.stage{position:fixed;inset:0;display:grid;place-items:center;background:var(--neutral)}
+/* fullscreen stage — background photo shows through the transparent canvas */
+.stage{position:fixed;inset:0;display:grid;place-items:center;background:#0b0d17 url('/bg.jpg') center/cover no-repeat}
 #c{position:absolute;inset:0;width:100%;height:100%;display:block}
 
 /* vignette neutral */
@@ -152,3 +152,10 @@ html[data-theme="night"] .cp-sec + .cp-sec{border-top-color:rgba(255,255,255,0.1
 .cp-unit{font-size:13px;opacity:.6}
 .cp-row input{width:64px;padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,0.12);background:rgba(255,255,255,0.7);color:inherit;font:inherit}
 html[data-theme="night"] .cp-row input{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.15)}
+.cp-alarms{display:flex;flex-direction:column;gap:6px}
+.cp-empty{font-size:13px;opacity:.55}
+.cp-alarm{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;background:rgba(0,0,0,0.05);font-size:14px}
+html[data-theme="night"] .cp-alarm{background:rgba(255,255,255,0.07)}
+.cp-alarm.ringing{background:rgba(224,90,71,0.18)}
+.cp-alarm-time{font-family:"Fragment Mono",monospace;font-weight:700}
+.cp-btn.sm{flex:none;width:auto;padding:5px 9px;font-size:13px}

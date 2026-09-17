@@ -66,6 +66,87 @@ function esc(s:string){ return s.replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;
 
 const THEME_ICON = { auto:'◐', day:'☀', night:'☾' } as const;
 
+// ---- clock tools state: timer + alarms (module scope so Saphira's chat ops reach them) ----
+let tRunning=false, tEnd=0, tRemain=5*60*1000;
+const fmtT=(ms:number)=>{ ms=Math.max(0,ms); const m=Math.floor(ms/60000), s=Math.floor(ms/1000)%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; };
+const tInputs=()=>{ const m=document.getElementById('tMin') as HTMLInputElement|null, sec=document.getElementById('tSec') as HTMLInputElement|null; return (Math.max(0,parseInt(m?.value||'')||0)*60 + Math.max(0,Math.min(59,parseInt(sec?.value||'')||0)))*1000; };
+const tText=()=>{ const d=document.getElementById('tDisplay'); if(d) d.textContent=fmtT(tRunning ? tEnd-Date.now() : tRemain); };
+const tSetBtn=(txt:string)=>{ const b=document.getElementById('tToggle'); if(b) b.textContent=txt; };
+function timerStart(){ if(tRemain<=0) tRemain=tInputs(); if(tRemain<=0) return; tEnd=Date.now()+tRemain; tRunning=true; tSetBtn('Pause'); tText(); }
+function timerPause(){ tRemain=Math.max(0,tEnd-Date.now()); tRunning=false; tSetBtn('Start'); tText(); }
+function timerReset(){ tRunning=false; tRemain=tInputs(); tSetBtn('Start'); tText(); }
+function timerAnnounceDone(){
+  tRunning=false; tRemain=0; tSetBtn('Start');
+  const d=document.getElementById('tDisplay'); if(d) d.textContent='00:00';
+  addBubble('bot','⏰ Timer finished!');
+  flashLive('⏰ Timer finished');
+  tts.unlock(); tts.speak('Your timer is done!');
+}
+type Alarm = { time:string; enabled:boolean; lastFired:string };
+let alarms: Alarm[] = [];
+let alarmAudio: HTMLAudioElement | null = null;
+let ringingIdx = -1;
+function loadAlarms(){
+  try{
+    const j=JSON.parse(localStorage.getItem('saphira_alarms')||'[]');
+    alarms=Array.isArray(j) ? j.filter((a:any)=>a && typeof a.time==='string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(a.time)).map((a:any)=>({ time:a.time, enabled:a.enabled!==false, lastFired:String(a.lastFired||'') })) : [];
+  }catch{ alarms=[]; }
+}
+function saveAlarms(){ localStorage.setItem('saphira_alarms', JSON.stringify(alarms)); renderAlarms(); }
+function renderAlarms(){
+  const list=document.getElementById('alarmList'); if(!list) return;
+  list.innerHTML='';
+  if(!alarms.length){ const d=document.createElement('div'); d.className='cp-empty'; d.textContent='No alarms — add one above'; list.appendChild(d); return; }
+  alarms.forEach((a,i)=>{
+    const row=document.createElement('div'); row.className='cp-alarm'+(ringingIdx===i?' ringing':'');
+    const t=document.createElement('span'); t.className='cp-alarm-time'; t.textContent=(ringingIdx===i?'🔔 ':'')+a.time+(a.enabled?'':' (off)');
+    row.appendChild(t);
+    const bell=document.createElement('button'); bell.className='cp-btn sm'; bell.textContent=a.enabled?'🔔':'🔕'; bell.title=a.enabled?'Alarm on':'Alarm off';
+    bell.addEventListener('click', ()=>{ a.enabled=!a.enabled; saveAlarms(); });
+    row.appendChild(bell);
+    if(ringingIdx===i){ const stop=document.createElement('button'); stop.className='cp-btn sm'; stop.textContent='Stop'; stop.addEventListener('click', stopAlarmRing); row.appendChild(stop); }
+    const del=document.createElement('button'); del.className='cp-btn sm'; del.textContent='✕'; del.title='Delete';
+    del.addEventListener('click', ()=>{ if(ringingIdx===i) stopAlarmRing(); alarms.splice(i,1); saveAlarms(); });
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+}
+function stopAlarmRing(){ if(alarmAudio){ alarmAudio.pause(); alarmAudio=null; } ringingIdx=-1; renderAlarms(); }
+function checkAlarms(){
+  const now=new Date();
+  const hhmm=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const day=now.toDateString();
+  for(const a of alarms){
+    if(a.enabled && a.time===hhmm && a.lastFired!==day+hhmm){
+      a.lastFired=day+hhmm; saveAlarms();
+      ringingIdx=alarms.indexOf(a); renderAlarms();
+      alarmAudio=new Audio('/audio/good-morning.mp3'); alarmAudio.volume=0.9;
+      alarmAudio.onended=()=>{ alarmAudio=null; ringingIdx=-1; renderAlarms(); };
+      alarmAudio.play().catch(()=>{});
+      addBubble('bot','☀ Good morning! Wake-up alarm — playing your morning keys.');
+      flashLive('☀ Alarm — good morning!');
+      tts.unlock(); tts.speak('Good morning! Time to wake up.');
+    }
+  }
+}
+function alarmsListText(){ const en=alarms.filter(a=>a.enabled); return en.length ? '⏰ Alarms: '+en.map(a=>a.time).join(', ') : '⏰ No alarms set'; }
+function applyTimeOps(reply:any){
+  const notes:string[]=[];
+  const t=reply.timers;
+  if(t){
+    if(t.list){ notes.push(tRunning ? `⏱ ${fmtT(Math.max(0,tEnd-Date.now()))} left on the timer` : (tRemain>0 ? `⏱ Timer paused with ${fmtT(tRemain)}` : '⏱ No timer running')); }
+    else if(t.cancel){ tRunning=false; tRemain=0; tSetBtn('Start'); tText(); notes.push('⏱ Timer cancelled'); }
+    else if(t.setSeconds && t.setSeconds>0){ tRemain=t.setSeconds*1000; timerStart(); notes.push(`⏱ Timer set — ${fmtT(tRemain)}`); }
+  }
+  const al=reply.alarms;
+  if(al){
+    if(al.list){ notes.push(alarmsListText()); }
+    else if(al.add){ if(alarms.some(x=>x.time===al.add)) notes.push(`⏰ There's already an alarm at ${al.add}`); else { alarms.push({time:al.add, enabled:true, lastFired:''}); saveAlarms(); notes.push(`⏰ Alarm set for ${al.add}`); } }
+    else if(al.remove){ const i=alarms.findIndex(x=>x.time===al.remove); if(i>=0){ alarms.splice(i,1); saveAlarms(); notes.push(`⏰ Alarm at ${al.remove} removed`); } else notes.push(`⏰ No alarm at ${al.remove}`); }
+  }
+  if(notes.length) addBubble('bot', notes.join(' '));
+}
+
 function renderApp(){
   const app=document.getElementById('app')!;
   app.innerHTML='';
@@ -80,6 +161,11 @@ function renderApp(){
           <div class="cp-title">Stopwatch</div>
           <div class="cp-time" id="swDisplay">00:00.0</div>
           <div class="cp-row"><button class="cp-btn primary" id="swToggle">Start</button><button class="cp-btn" id="swReset">Reset</button></div>
+        </div>
+        <div class="cp-sec">
+          <div class="cp-title">Alarm <small style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">— plays your morning keys</small></div>
+          <div class="cp-row"><input id="alarmTime" type="time" value="07:00" aria-label="Alarm time"/><button class="cp-btn primary" id="alarmAdd">Add</button></div>
+          <div id="alarmList" class="cp-alarms"></div>
         </div>
         <div class="cp-sec">
           <div class="cp-title">Timer</div>
@@ -163,7 +249,7 @@ function wire(){
     if(dt) dt.textContent=d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'});
   };
   tickClock(); window.setInterval(tickClock, 5000);
-  // ---- clock tools: timer + stopwatch (click the clock) ----
+  // ---- clock tools: timer + stopwatch + alarms (click the clock) ----
   const clockEl=document.getElementById('clock') as HTMLElement;
   const clockPanel=document.getElementById('clockPanel') as HTMLElement;
   clockEl.addEventListener('click', ()=>{
@@ -188,43 +274,29 @@ function wire(){
   document.getElementById('swReset')!.addEventListener('click', ()=>{
     swRunning=false; swAcc=0; swT.textContent='Start'; swText();
   });
-  // timer
-  let tRunning=false, tEnd=0, tRemain=5*60*1000;
+  // timer element bindings (state lives at module scope — Saphira's chat ops drive it too)
   const tD=document.getElementById('tDisplay') as HTMLElement;
   const tMinI=document.getElementById('tMin') as HTMLInputElement;
   const tSecI=document.getElementById('tSec') as HTMLInputElement;
   const tT=document.getElementById('tToggle') as HTMLButtonElement;
-  const fmtT=(ms:number)=>{ ms=Math.max(0,ms); const m=Math.floor(ms/60000), s=Math.floor(ms/1000)%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; };
-  const tInputs=()=> (Math.max(0,parseInt(tMinI.value)||0)*60 + Math.max(0,Math.min(59,parseInt(tSecI.value)||0)))*1000;
-  const tText=()=>{ tD.textContent=fmtT(tRunning ? tEnd-Date.now() : tRemain); };
-  tT.addEventListener('click', ()=>{
-    if(tRunning){ tRemain=Math.max(0,tEnd-Date.now()); tRunning=false; tT.textContent='Start'; }
-    else{
-      if(tRemain<=0) tRemain=tInputs();
-      if(tRemain<=0) return;
-      tEnd=Date.now()+tRemain; tRunning=true; tT.textContent='Pause';
-    }
-    tText();
+  tT.addEventListener('click', ()=>{ if(tRunning) timerPause(); else timerStart(); tText(); });
+  document.getElementById('tReset')!.addEventListener('click', ()=>{ timerReset(); tText(); });
+  [tMinI, tSecI].forEach(i=> i.addEventListener('input', ()=>{ if(!tRunning){ tRemain=tInputs(); tText(); } }));
+  // alarms
+  loadAlarms(); renderAlarms();
+  document.getElementById('alarmAdd')!.addEventListener('click', ()=>{
+    const inp=document.getElementById('alarmTime') as HTMLInputElement;
+    const t=(inp.value||'').trim();
+    if(!/^([01]?\d|2[0-3]):[0-5]\d$/.test(t)){ flashLive('Pick a time (HH:MM)'); return; }
+    if(alarms.some(x=>x.time===t)){ flashLive(`Alarm at ${t} already exists`); return; }
+    alarms.push({ time:t, enabled:true, lastFired:'' });
+    saveAlarms(); flashLive(`⏰ Alarm set for ${t}`);
   });
-  document.getElementById('tReset')!.addEventListener('click', ()=>{
-    tRunning=false; tT.textContent='Start'; tRemain=tInputs(); tText();
-  });
-  [tMinI, tSecI].forEach(i=> i.addEventListener('input', ()=>{
-    if(!tRunning){ tRemain=tInputs(); tText(); }
-  }));
-  // display loop: stopwatch + timer + timer-done effects
+  // display loop: stopwatch + timer + timer-done + alarm checks
   window.setInterval(()=>{
-    swText();
-    if(tRunning){
-      const remain=tEnd-Date.now();
-      tD.textContent=fmtT(remain);
-      if(remain<=0){
-        tRunning=false; tRemain=0; tT.textContent='Start'; tD.textContent='00:00';
-        addBubble('bot','⏰ Timer finished!');
-        flashLive('⏰ Timer finished');
-        tts.unlock(); tts.speak("Your timer is done!");
-      }
-    }
+    swText(); tText();
+    if(tRunning && tEnd-Date.now()<=0) timerAnnounceDone();
+    checkAlarms();
   }, 200);
   // ?debug=1 overlay — proves which build is deployed + live grounding state
   try{
@@ -398,7 +470,7 @@ function save(){
   const ttsApiKey=(document.getElementById('ttsKey') as HTMLInputElement).value.trim();
   const wakeWord=(document.getElementById('wakeWord') as HTMLInputElement).value.trim()||'hey saphira';
   let persona=(document.getElementById('persona') as HTMLTextAreaElement).value.trim()|| settings.persona;
-  if(persona.length>900) persona=persona.slice(0,900);
+  if(persona.length>1400) persona=persona.slice(0,1400);
   const aiVoice=(document.getElementById('aiVoice') as HTMLSelectElement).value || settings.aiVoice;
   const rate=parseFloat((document.getElementById('rate') as HTMLInputElement).value);
   const zoom=Math.min(1.6, Math.max(0.7, parseFloat((document.getElementById('zoom') as HTMLInputElement).value) || 1));
@@ -520,6 +592,7 @@ async function handleUser(text:string){
     else if(/\bpiano\b|play (some |a |the )?(music|song|tune|melody|keys)|serenade/i.test(text)) avatar?.playGest('piano');
     else avatar?.setExpression(reply.expression, reply.intensity, reply.gesture);
     if(reply.tasks) applyTaskOps(reply.tasks);
+    applyTimeOps(reply);
     // zoom + mouth loop start instantly while TTS PCM is still fetching
     // (tts.speak also signals speaking before fetch, this is a backup)
     avatar?.setTalking(true);

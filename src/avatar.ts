@@ -196,7 +196,6 @@ export class SaphiraAvatar {
   private baseBg = new THREE.Color('#ece9e3'); // theme bg before mood tint
   private ground!: THREE.Mesh;
   private groundMat!: THREE.MeshStandardMaterial;
-  private backdropMat!: THREE.MeshBasicMaterial;
   private shadow!: THREE.Mesh;
   private canvas: HTMLCanvasElement;
   private theme: Theme = (localStorage.getItem('saphira_theme') as Theme) || 'auto';
@@ -252,14 +251,15 @@ export class SaphiraAvatar {
     this.isLegacy = this.detectLegacy();
     if(this.isLegacy) try{ document.documentElement.classList.add('legacy'); }catch{}
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#ece9e3');
-    // ponytail: fog melts the floor into the bg — model sits at ~3-5, fog starts at 14
-    this.scene.fog = new THREE.Fog(0xece9e3, 14, 34);
+    // background is the CSS photo layer (see .stage in style.css) — the canvas
+    // renders transparent so the image shows through; no fog to tint it
+    this.scene.background = null;
+    this.scene.fog = null;
     const w = canvas.clientWidth||800, h=canvas.clientHeight||800;
     this.camera = new THREE.PerspectiveCamera(34, w/h, 0.1, 100);
     this.camera.position.set(0, 1.1, 4.6);
     const isLow = window.matchMedia('(max-width: 768px)').matches || this.isLegacy;
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !isLow && !this.isLegacy, alpha:false, powerPreference:'low-power' });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: !isLow && !this.isLegacy, alpha:true, powerPreference:'low-power' });
     // ponytail: iPad Air caps at 1× — 1.6× would 2.5× fill rate and OOM
     const dprCap = this.isLegacy ? 1 : (isLow?1.25:1.6);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, dprCap));
@@ -343,10 +343,8 @@ export class SaphiraAvatar {
     this.blendTarget=t;
   }
   private applyTheme(b: number){
-    (this.scene.background as THREE.Color).copy(DAY_BG).lerp(NIGHT_BG, b);
-    this.baseBg.copy(this.scene.background as THREE.Color);
-    this.backdropMat.color.copy(DAY_FLOOR).lerp(NIGHT_FLOOR, b);
-    if(this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.scene.background as THREE.Color);
+    if(this.scene.background) (this.scene.background as THREE.Color).copy(DAY_BG).lerp(NIGHT_BG, b);
+    this.baseBg.copy(DAY_BG).lerp(NIGHT_BG, b);
     this.groundMat.color.copy(DAY_GROUND).lerp(NIGHT_GROUND, b);
     this.ambient.intensity = 0.72 - b*0.34;   // 0.72 day -> 0.38 night
     this.lightKey.intensity = 0.55 - b*0.39;  // 0.55 -> 0.16
@@ -373,14 +371,8 @@ export class SaphiraAvatar {
     this.scene.add(this.moodLight);
   }
   private addGround(){
-    // ponytail: seamless studio — infinite floor a step darker than the bg + fog
-    // melts the horizon, so the disc reads as a rug on a floor instead of an
-    // island in the void. One unlit plane, zero cost on the Air.
-    this.backdropMat = new THREE.MeshBasicMaterial({ color:0xdbd7cd });
-    const backdrop = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), this.backdropMat);
-    backdrop.rotation.x = -Math.PI/2;
-    backdrop.position.y = -0.02;
-    this.scene.add(backdrop);
+    // ponytail: the backdrop is the CSS photo layer behind the transparent
+    // canvas — only the rug disc + contact shadow render under her feet
     // ponytail: 32/28 segs is overkill on A7 — 20 segs looks same at distance
     const segs = this.isLegacy ? 20 : 32;
     const shSegs = this.isLegacy ? 16 : 28;
@@ -982,13 +974,13 @@ export class SaphiraAvatar {
         this.model.rotation.y = SIT.rotY;
         this.model.position.x = SIT.x; this.model.position.z = SIT.z;
         this.staging='piano-play';
-        // stretch the 9.5s clip into a ~15s performance (slower, dreamier
+        // stretch the 9.5s clip into a ~30s performance (slow, dreamy
         // playing — hidden by the camera shot anyway)
         const pa=this.acts.get('piano');
-        if(pa){ pa.timeScale = 0.6355; }
+        if(pa){ pa.timeScale = 0.3178; }
         this.playOnce('piano');
         playPianoPhrase();
-        this.pianoEndTimer = window.setTimeout(()=> this.endPiano(), 15100);
+        this.pianoEndTimer = window.setTimeout(()=> this.endPiano(), 30600);
       }
     }
     // smooth camera dolly, following her wherever she stands on the stage
@@ -1019,7 +1011,7 @@ export class SaphiraAvatar {
       if(this.moodAmt>0.01){
         this.moodLight.color.copy(this.moodTarget);
         this.moodLight.intensity = this.moodAmt*5;
-        (this.scene.background as THREE.Color).copy(this.baseBg).lerp(this.moodTarget, 0.02*this.moodAmt);
+        if(this.scene.background) (this.scene.background as THREE.Color).copy(this.baseBg).lerp(this.moodTarget, 0.02*this.moodAmt);
       } else if(this.moodLight.intensity>0.01){
         this.moodLight.intensity *= 0.92;
         if(this.moodLight.intensity<0.02) this.moodLight.intensity=0;
@@ -1030,8 +1022,8 @@ export class SaphiraAvatar {
       const breathe = 0.5 + 0.5*Math.sin(t*2.2);
       this.moodLight.intensity += ((this.moodAmt*(4+breathe*3)) - this.moodLight.intensity)*mk;
       if(this.moodAmt>0.01){
-        (this.scene.background as THREE.Color).copy(this.baseBg).lerp(this.moodTarget, 0.025*this.moodAmt);
-      } else {
+        if(this.scene.background) (this.scene.background as THREE.Color).copy(this.baseBg).lerp(this.moodTarget, 0.025*this.moodAmt);
+      } else if(this.scene.background){
         (this.scene.background as THREE.Color).copy(this.baseBg);
       }
     }

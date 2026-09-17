@@ -5,6 +5,8 @@ export type SaphiraReply = {
   intensity: number;
   gesture: 'none'|'wave'|'nod'|'shrug';
   tasks?: { add?: string[]; complete?: string[]; remove?: string[] };
+  timers?: { setSeconds?: number; cancel?: boolean; list?: boolean };
+  alarms?: { add?: string; remove?: string; list?: boolean };
 };
 
 const VALID_EXPR = new Set(['neutral','happy','excited','sad','surprised','thinking','annoyed','blush']);
@@ -148,6 +150,20 @@ function parseReply(raw:string): SaphiraReply {
     const strs=(v:any)=> Array.isArray(v) ? v.filter((x:any)=>typeof x==='string'&&x.trim()).map((x:string)=>x.trim().slice(0,120)).slice(0,5) : [];
     const ops = { add: strs(tj.add), complete: strs(tj.complete), remove: strs(tj.remove) };
     if(ops.add.length||ops.complete.length||ops.remove.length) out.tasks=ops;
+  }
+  // optional timer ops: {setSeconds:N, cancel:true, list:true}
+  const tm = (j as any).timers;
+  if(tm && typeof tm==='object'){
+    const secs = Math.max(0, Math.min(6*3600, Number(tm.setSeconds)||0));
+    const ops = { setSeconds: secs || undefined, cancel: !!tm.cancel, list: !!tm.list };
+    if(ops.setSeconds||ops.cancel||ops.list) out.timers=ops;
+  }
+  // optional alarm ops: {add:'HH:MM', remove:'HH:MM', list:true}
+  const al = (j as any).alarms;
+  if(al && typeof al==='object'){
+    const okTime=(v:any)=> typeof v==='string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(v.trim());
+    const ops = { add: okTime(al.add)? al.add.trim() : undefined, remove: okTime(al.remove)? al.remove.trim() : undefined, list: !!al.list };
+    if(ops.add||ops.remove||ops.list) out.alarms=ops;
   }
   return out;
 }
