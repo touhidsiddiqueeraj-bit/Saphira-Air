@@ -1,6 +1,6 @@
 // ponytail: zero-asset music box — synthesized sine+harmonic plucks, no samples,
-// no downloads, nothing for the Air to fetch. Original lullaby, no copyright.
-import { soundOn } from './settings';
+// no downloads, nothing for the Air to fetch. Original tunes, no copyright.
+import { pianoOn } from './settings';
 
 let ctx: AudioContext | null = null;
 let live: AudioScheduledSourceNode[] = [];
@@ -24,9 +24,19 @@ try {
   window.addEventListener('keydown', unlock);
 } catch {}
 
-// A-minor pentatonic lullaby, ~14 notes over the 9.5s piano clip
-const NOTES = [440, 523.25, 587.33, 659.25, 523.25, 440, 392, 440, 523.25, 587.33, 659.25, 783.99, 659.25, 523.25];
-const STEPS = [0, 0.7, 1.4, 2.1, 2.9, 3.6, 4.4, 5.1, 5.8, 6.5, 7.2, 7.9, 8.6, 9.3];
+// three original tunes, each spread over the ~15s performance — one is picked
+// at random per sitting so she doesn't play the same thing every time
+const MELODIES: { notes: number[]; steps: number[] }[] = [
+  // lullaby (A-minor pentatonic)
+  { notes: [440, 523.25, 587.33, 659.25, 523.25, 440, 392, 440, 523.25, 587.33, 659.25, 783.99, 659.25, 523.25],
+    steps: [0, 1.05, 2.1, 3.15, 4.35, 5.4, 6.6, 7.65, 8.7, 9.75, 10.8, 12.0, 13.05, 14.1] },
+  // nocturne (low, sparse, E-minor colors)
+  { notes: [164.81, 196, 246.94, 293.66, 329.63, 392, 329.63, 246.94, 196, 246.94, 329.63, 392, 440, 392, 329.63, 246.94],
+    steps: [0, 0.9, 1.9, 2.9, 4.0, 4.9, 5.9, 7.0, 8.1, 9.0, 10.0, 11.1, 12.0, 12.9, 13.9, 14.7] },
+  // music-box waltz (bright, G-major pentatonic)
+  { notes: [783.99, 659.25, 587.33, 659.25, 783.99, 880, 783.99, 659.25, 587.33, 523.25, 587.33, 659.25, 783.99, 659.25, 523.25, 440],
+    steps: [0, 0.75, 1.5, 2.25, 3.4, 4.15, 4.9, 5.65, 6.9, 7.65, 8.4, 9.15, 10.3, 11.05, 12.2, 13.3] },
+];
 
 function pluck(c: AudioContext, t: number, freq: number) {
   const g = c.createGain();
@@ -55,13 +65,16 @@ function master(c: AudioContext): GainNode {
 }
 
 export function playPianoPhrase() {
-  if (!soundOn()) return; // sound muted in settings — she plays silently
+  if (!pianoOn()) return; // piano muted in settings — she plays silently
   const c = ensure();
   if (!c) return;
   stopPianoPhrase();
+  const m = MELODIES[Math.floor(Math.random() * MELODIES.length)];
   const t0 = c.currentTime + 0.15;
-  for (let i = 0; i < NOTES.length; i++) pluck(c, t0 + STEPS[i], NOTES[i]);
-  timer = window.setTimeout(stopPianoPhrase, 13500);
+  let last = 0;
+  for (let i = 0; i < m.notes.length; i++) { pluck(c, t0 + m.steps[i], m.notes[i]); last = m.steps[i]; }
+  // let the final plucks ring out, then clean up
+  timer = window.setTimeout(stopPianoPhrase, (last + 2.6) * 1000);
 }
 
 export function stopPianoPhrase() {

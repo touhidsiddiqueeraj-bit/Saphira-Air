@@ -4,7 +4,6 @@ import { GeminiClient } from './gemini';
 import { SaphiraVoice, AI_VOICES } from './aiVoice';
 import { WakeListener } from './speech';
 import { loadSettings, saveSettings, ttsKey, PRESETS } from './settings';
-import { stopPianoPhrase } from './pianoSong';
 
 const settings = loadSettings();
 let avatar: SaphiraAvatar | null = null;
@@ -75,7 +74,20 @@ function renderApp(){
       <canvas id="c" aria-label="Saphira canvas"></canvas>
       <button class="theme" id="themeBtn" aria-label="Toggle day / night">◐</button>
       <div class="dbg" id="dbg" style="display:none"></div>
-      <div class="clock" id="clock" aria-label="Clock"><span id="clockTime">--:--</span><span id="clockDate"></span></div>
+      <div class="clock" id="clock" aria-label="Clock — click for timer & stopwatch"><span id="clockTime">--:--</span><span id="clockDate"></span></div>
+      <div class="clockpanel" id="clockPanel" style="display:none">
+        <div class="cp-sec">
+          <div class="cp-title">Stopwatch</div>
+          <div class="cp-time" id="swDisplay">00:00.0</div>
+          <div class="cp-row"><button class="cp-btn primary" id="swToggle">Start</button><button class="cp-btn" id="swReset">Reset</button></div>
+        </div>
+        <div class="cp-sec">
+          <div class="cp-title">Timer</div>
+          <div class="cp-time" id="tDisplay">05:00</div>
+          <div class="cp-row"><input id="tMin" type="number" min="0" max="180" step="1" value="5" aria-label="Minutes"/><span class="cp-unit">min</span><input id="tSec" type="number" min="0" max="59" step="1" value="0" aria-label="Seconds"/><span class="cp-unit">sec</span></div>
+          <div class="cp-row"><button class="cp-btn primary" id="tToggle">Start</button><button class="cp-btn" id="tReset">Reset</button></div>
+        </div>
+      </div>
       <button class="gear" id="gear" aria-label="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 9 15a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0 1-1.51V7a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 15 12c0 .73.4 1.38 1 1.51.2.06.41.1.6.09Z"/></svg>
       </button>
@@ -117,7 +129,8 @@ function renderApp(){
         <div class="field"><span>Rate</span><div class="row"><input id="rate" type="range" min="0.7" max="1.3" step="0.05" style="flex:1"/></div></div>
         <div class="field"><span>Zoom <small style="opacity:.6;font-weight:400">— closer or farther camera</small></span><div class="row"><input id="zoom" type="range" min="0.7" max="1.6" step="0.05" style="flex:1"/></div></div>
         <label class="field"><span>Mic</span><select id="micEnabled"><option value="no">Off</option><option value="yes">On</option></select></label>
-        <label class="field"><span>Sound <small style="opacity:.6;font-weight:400">— her voice &amp; the piano</small></span><select id="soundEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
+        <label class="field"><span>Voice <small style="opacity:.6;font-weight:400">— her spoken replies</small></span><select id="voiceEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
+        <label class="field"><span>Piano <small style="opacity:.6;font-weight:400">— she plays about once every 5 minutes</small></span><select id="pianoEnabled"><option value="yes">On</option><option value="no">Off</option></select></label>
         <div class="field"><span>Idle chatter <small style="opacity:.6;font-weight:400">— she speaks up on a timer</small></span><div class="row" style="display:flex;gap:8px"><select id="chatterEnabled" style="flex:1"><option value="yes">On</option><option value="no">Off</option></select><input id="chatterMinutes" type="number" min="1" max="120" step="1" title="Minutes between lines" style="width:84px;flex:none" placeholder="min"/></div></div>
         <div class="row">
           <button class="btn primary" id="saveBtn">Save</button>
@@ -150,6 +163,69 @@ function wire(){
     if(dt) dt.textContent=d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'});
   };
   tickClock(); window.setInterval(tickClock, 5000);
+  // ---- clock tools: timer + stopwatch (click the clock) ----
+  const clockEl=document.getElementById('clock') as HTMLElement;
+  const clockPanel=document.getElementById('clockPanel') as HTMLElement;
+  clockEl.addEventListener('click', ()=>{
+    clockPanel.style.display = clockPanel.style.display==='none' ? 'flex' : 'none';
+  });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') clockPanel.style.display='none'; });
+  // stopwatch
+  let swRunning=false, swBase=0, swAcc=0;
+  const swD=document.getElementById('swDisplay') as HTMLElement;
+  const swT=document.getElementById('swToggle') as HTMLButtonElement;
+  const swText=()=>{
+    const ms=swAcc+(swRunning?Date.now()-swBase:0);
+    const m=Math.floor(ms/60000), s=Math.floor(ms/1000)%60, t=Math.floor(ms/100)%10;
+    swD.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${t}`;
+  };
+  swT.addEventListener('click', ()=>{
+    swRunning=!swRunning;
+    if(swRunning) swBase=Date.now(); else swAcc+=Date.now()-swBase;
+    swT.textContent=swRunning?'Pause':'Start';
+    swText();
+  });
+  document.getElementById('swReset')!.addEventListener('click', ()=>{
+    swRunning=false; swAcc=0; swT.textContent='Start'; swText();
+  });
+  // timer
+  let tRunning=false, tEnd=0, tRemain=5*60*1000;
+  const tD=document.getElementById('tDisplay') as HTMLElement;
+  const tMinI=document.getElementById('tMin') as HTMLInputElement;
+  const tSecI=document.getElementById('tSec') as HTMLInputElement;
+  const tT=document.getElementById('tToggle') as HTMLButtonElement;
+  const fmtT=(ms:number)=>{ ms=Math.max(0,ms); const m=Math.floor(ms/60000), s=Math.floor(ms/1000)%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; };
+  const tInputs=()=> (Math.max(0,parseInt(tMinI.value)||0)*60 + Math.max(0,Math.min(59,parseInt(tSecI.value)||0)))*1000;
+  const tText=()=>{ tD.textContent=fmtT(tRunning ? tEnd-Date.now() : tRemain); };
+  tT.addEventListener('click', ()=>{
+    if(tRunning){ tRemain=Math.max(0,tEnd-Date.now()); tRunning=false; tT.textContent='Start'; }
+    else{
+      if(tRemain<=0) tRemain=tInputs();
+      if(tRemain<=0) return;
+      tEnd=Date.now()+tRemain; tRunning=true; tT.textContent='Pause';
+    }
+    tText();
+  });
+  document.getElementById('tReset')!.addEventListener('click', ()=>{
+    tRunning=false; tT.textContent='Start'; tRemain=tInputs(); tText();
+  });
+  [tMinI, tSecI].forEach(i=> i.addEventListener('input', ()=>{
+    if(!tRunning){ tRemain=tInputs(); tText(); }
+  }));
+  // display loop: stopwatch + timer + timer-done effects
+  window.setInterval(()=>{
+    swText();
+    if(tRunning){
+      const remain=tEnd-Date.now();
+      tD.textContent=fmtT(remain);
+      if(remain<=0){
+        tRunning=false; tRemain=0; tT.textContent='Start'; tD.textContent='00:00';
+        addBubble('bot','⏰ Timer finished!');
+        flashLive('⏰ Timer finished');
+        tts.unlock(); tts.speak("Your timer is done!");
+      }
+    }
+  }, 200);
   // ?debug=1 overlay — proves which build is deployed + live grounding state
   try{
     if(new URLSearchParams(location.search).has('debug')){
@@ -228,8 +304,9 @@ function wire(){
   (document.getElementById('micEnabled') as HTMLSelectElement).value = wakeEnabled?'yes':'no';
   updateMic();
 
-  (document.getElementById('soundEnabled') as HTMLSelectElement).value = settings.sound===false?'no':'yes';
-  tts.setMuted(settings.sound===false);
+  (document.getElementById('voiceEnabled') as HTMLSelectElement).value = settings.voice===false?'no':'yes';
+  (document.getElementById('pianoEnabled') as HTMLSelectElement).value = settings.piano===false?'no':'yes';
+  tts.setMuted(settings.voice===false);
 
   (document.getElementById('apiKey') as HTMLInputElement).value = settings.apiKey;
   (document.getElementById('ttsKey') as HTMLInputElement).value = settings.ttsApiKey || '';
@@ -326,17 +403,19 @@ function save(){
   const rate=parseFloat((document.getElementById('rate') as HTMLInputElement).value);
   const zoom=Math.min(1.6, Math.max(0.7, parseFloat((document.getElementById('zoom') as HTMLInputElement).value) || 1));
   const micOn=(document.getElementById('micEnabled') as HTMLSelectElement).value==='yes';
-  const soundOn=(document.getElementById('soundEnabled') as HTMLSelectElement).value!=='no';
+  const voiceOn=(document.getElementById('voiceEnabled') as HTMLSelectElement).value!=='no';
+  const pianoOn=(document.getElementById('pianoEnabled') as HTMLSelectElement).value!=='no';
   const chatter=(document.getElementById('chatterEnabled') as HTMLSelectElement).value!=='no';
   const chatterMinutes=Math.min(120, Math.max(1, parseInt((document.getElementById('chatterMinutes') as HTMLInputElement).value)||15));
-  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes; settings.sound=soundOn;
+  settings.apiKey=apiKey; settings.ttsApiKey=ttsApiKey; settings.wakeWord=wakeWord; settings.persona=persona; settings.aiVoice=aiVoice; settings.rate=rate; settings.zoom=zoom; settings.chatter=chatter; settings.chatterMinutes=chatterMinutes; settings.voice=voiceOn; settings.piano=pianoOn;
   saveSettings(settings);
   startChatter();
   avatar?.setZoom(zoom);
   tts.setAiVoice(aiVoice); tts.setRate(rate);
-  // sound off — cut whatever is playing right now (her voice, piano melody)
-  tts.setMuted(!soundOn);
-  if(!soundOn) stopPianoPhrase();
+  // voice off — cut whatever she's saying right now
+  tts.setMuted(!voiceOn);
+  // piano off — end a performance that's still running
+  if(!pianoOn) avatar?.stopPiano();
   gemini.setRpm(settings.rpmLimit);
   wake.setWakeWord(wakeWord);
   wakeEnabled=micOn;
@@ -436,10 +515,9 @@ async function handleUser(text:string){
     if(history.length>12) history=history.slice(-12);
     thinkEl.remove();
     addBubble('bot', reply.text);
-    // dance/piano/texting only on explicit request — never autonomous
+    // dance/piano only on explicit request — never autonomous
     if(/danc|hip[\s-]?hop|disco|bhangra/i.test(text)) avatar?.playGest('wave');
     else if(/\bpiano\b|play (some |a |the )?(music|song|tune|melody|keys)|serenade/i.test(text)) avatar?.playGest('piano');
-    else if(/\b(text|texting|phone|smartphone|s22|sms)\b/i.test(text)) avatar?.playGest('texting');
     else avatar?.setExpression(reply.expression, reply.intensity, reply.gesture);
     if(reply.tasks) applyTaskOps(reply.tasks);
     // zoom + mouth loop start instantly while TTS PCM is still fetching
@@ -462,12 +540,11 @@ async function handleUser(text:string){
 
 renderApp();
 
-// demo deep-links: ?piano=1 / ?texting=1 auto-trigger once she's loaded
+// demo deep-link: ?piano=1 auto-triggers a performance once she's loaded
 try{
   window.addEventListener('saphira:load', (e:any)=>{
     if(!(e.detail && e.detail.done) || e.detail.error) return;
-    const q = new URLSearchParams(location.search);
-    const what = q.has('piano') ? 'piano' : (q.has('texting') ? 'texting' : null);
-    if(what) window.setTimeout(()=>{ (window as any).__saphiraAvatar?.playGest(what); }, what==='piano' ? 2500 : 1500);
+    if(new URLSearchParams(location.search).has('piano'))
+      window.setTimeout(()=>{ (window as any).__saphiraAvatar?.playGest('piano'); }, 2500);
   });
 }catch{}

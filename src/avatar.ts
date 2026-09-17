@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { playPianoPhrase, stopPianoPhrase } from './pianoSong';
+import { pianoOn } from './settings';
 
 export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking'|'annoyed'|'blush';
 export type Gesture = 'none'|'wave'|'nod'|'shrug';
@@ -42,11 +43,6 @@ const PIANO_ROT = SIT.rotY + PIANO_REL.rotY;
 // case — keys + case edge in the foreground, zoom on her face as she plays
 const PIANO_CAM_POS = new THREE.Vector3(SIT.x - 2.0, 1.62, SIT.z + 0.28);
 const PIANO_CAM_LOOK = new THREE.Vector3(SIT.x + 0.1, 1.42, SIT.z + 0.02);
-// phone: while texting, a per-frame bridge keeps it spanning her two palms
-// (position recomputed from the live hand bones — it can never float off)
-const _ph1 = new THREE.Vector3(), _ph2 = new THREE.Vector3(), _phLong = new THREE.Vector3();
-const _phN = new THREE.Vector3(), _phX = new THREE.Vector3(), _phMid = new THREE.Vector3();
-const _phM = new THREE.Matrix4(), _phRel = new THREE.Matrix4(), _phS = new THREE.Vector3();
 // wandering feet stay out of the piano corner
 const PIANO_KEEP = { x: -0.55, z: 0.0, r: 1.45 };
 // measured world footprint of the placed prop (+margin) — walk paths route
@@ -167,13 +163,12 @@ export class SaphiraAvatar {
       const was = this.oneShot.getClip().name.toLowerCase();
       this.oneShot=null;
       this.toBase(0.35);
-      if(was==='texting' && this.phone) this.phone.visible=false;
       // piano ring-out: the phrase's last notes keep decaying while she gets
-      // up — don't stopPianoPhrase here, the song cleans itself up (13.5s)
+      // up — don't stopPianoPhrase here, the song cleans itself up
       if(was==='piano' && this.staging){
         this.staging='';
         // step out from the bench toward the user (standing put puts her legs
-        // through the bench), clear of the prop footprint
+        // through where the bench was), clear of the prop footprint
         this.hasVia=false;
         this.wanderTarget.set(SIT.x + 0.08, 0, SIT.z + 1.25);
         const w=this.acts.get('wander') ?? this.acts.get('walk');
@@ -236,15 +231,12 @@ export class SaphiraAvatar {
   private wanderTarget = new THREE.Vector3();
   private lifeTimer: number | null = null;
 
-  // piano & texting: clips + props load async, gated by the ready flags.
+  // piano: clip loads async, gated by the ready flag.
   // staging walks her to the bench; cleared when the piano clip finishes.
-  private phone: THREE.Object3D | null = null;
   private pianoReady = false;
-  private phoneReady = false;
   private staging: '' | 'piano-walk' | 'piano-turn' | 'piano-play' = '';
-  // hand bones for the per-frame phone bridge
-  private lhBone: THREE.Object3D | null = null;
-  private rhBone: THREE.Object3D | null = null;
+  private lastPiano = Date.now();      // auto-piano cooldown: once per 5 min
+  private pianoEndTimer: number | null = null;
   // intermediate waypoint when a walk path would cross the piano footprint
   private via = new THREE.Vector3();
   private hasVia = false;
@@ -567,8 +559,6 @@ export class SaphiraAvatar {
       this.neckBone = findBone(['mixamorig:Neck','Neck','neck']) ?? null;
       this.spineBone = findBone(['mixamorig:Spine','mixamorig:Spine1','Spine','spine']) ?? null;
       this.hipsBone = findBone(['mixamorig:Hips','Hips','hips']) ?? null;
-      this.lhBone = findBone(['mixamorig:LeftHand']) ?? null;
-      this.rhBone = findBone(['mixamorig:RightHand']) ?? null;
       if(this.hipsBone){ this.hipsBindX = this.hipsBone.position.x; this.hipsBindZ = this.hipsBone.position.z; }
       // sampled in Blender (foot minZ, rest=0.017): idle/nod grounded, but every
       // Mixamo clip carries its own root height — talk/walk/wander/wave/raise sit
@@ -597,7 +587,7 @@ export class SaphiraAvatar {
       this.model.position.set(0.55, this.model.position.y, 0.35);
       this.fitCamera();
       this.scheduleLife();
-      // ---- piano & texting clips: Mixamo anim GLBs converted at runtime ----
+      // ---- piano clip: Mixamo anim GLB converted at runtime ----
       const registerClips = (gltf:any)=>{
         if(!this.mixer) return;
         for(const c of convertClipForSaphira(gltf)){
@@ -607,7 +597,6 @@ export class SaphiraAvatar {
         }
       };
       loader.load('/model/anim_piano.glb', (gltf:any)=>{ registerClips(gltf); }, undefined, ()=>{});
-      loader.load('/model/anim_texting.glb', (gltf:any)=>{ registerClips(gltf); }, undefined, ()=>{});
       // ---- grand piano prop (placement measured against her seated pose) ----
       loader.load('/model/piano.glb', (gltf:any)=>{
         const p = gltf.scene as THREE.Group;
@@ -625,18 +614,6 @@ export class SaphiraAvatar {
         }
         this.scene.add(p);
         this.pianoReady = true;
-      }, undefined, ()=>{});
-      // ---- phone prop: rides her left hand while texting ----
-      loader.load('/model/phone.glb', (gltf:any)=>{
-        const ph = gltf.scene as THREE.Group;
-        ph.traverse((o:any)=>{
-          if(o.isMesh) o.frustumCulled = false;
-        });
-        const hand = findBone(['mixamorig:LeftHand']);
-        if(!hand) return;
-        ph.visible = false;
-        hand.add(ph);
-        this.phone = ph; this.phoneReady = true;
       }, undefined, ()=>{});
       window.dispatchEvent(new CustomEvent('saphira:load', {detail:{pct:100, done:true}}));
     }, (e:any)=>{
@@ -689,15 +666,14 @@ export class SaphiraAvatar {
     const idle = this.wanderMode==='none' && !this.busy && !this.talking;
     if(idle){
       const r=Math.random();
-      // walks + hand raises + yawns + the occasional piano piece or phone
-      // check. Dance/laugh (wave/wave_small) never play on their own — only
+      // walks + hand raises + yawns + a rare piano piece (cooldown: once per
+      // 5 min). Dance/laugh (wave/wave_small) never play on their own — only
       // on explicit chat request via playGest.
       if(r<0.38){ this.startWander(); }
-      else if(r<0.54){ this.playOnce('raise'); }
-      else if(r<0.66){ this.playOnce('yawn'); }
-      else if(r<0.79 && this.pianoReady){ this.startPiano(); }
-      else if(r<0.93 && this.phoneReady){ this.playTexting(); }
-      else if(r<0.96){ this.startGlance(); }
+      else if(r<0.56){ this.playOnce('raise'); }
+      else if(r<0.72){ this.playOnce('yawn'); }
+      else if(r<0.82 && this.pianoReady && Date.now()-this.lastPiano > 5*60*1000){ this.startPiano(); }
+      else if(r<0.94){ this.startGlance(); }
       else {
         this.tiltAmt = (Math.random()<0.5?-1:1)*0.09;
         this.tiltUntil = performance.now()/1000 + 2.2 + Math.random()*1.5;
@@ -760,9 +736,16 @@ export class SaphiraAvatar {
     this.glanceYaw = (Math.random()<0.5?-1:1)*(0.25+Math.random()*0.3);
     this.glanceUntil = performance.now()/1000 + 1.2 + Math.random()*1.6;
   }
-  // walk to the bench, settle facing the keys, then play
-  private startPiano(){
-    if(!this.pianoReady || !!this.staging || this.busy || !this.acts.has('piano')) return;
+  // walk to the bench, settle facing the keys, then play for ~15s.
+  // Autonomous plays are rare: once per 5 minutes (explicit requests bypass).
+  private startPiano(force=false){
+    if(!this.pianoReady || !!this.staging || !this.acts.has('piano')) return;
+    if(!pianoOn()) return;                      // piano toggled off in settings
+    if(!force && Date.now()-this.lastPiano < 5*60*1000) return; // cooldown
+    this.lastPiano = Date.now();
+    // she might be mid-yawn — brush it aside, the walk takes over
+    this.oneShot?.fadeOut(0.3);
+    this.oneShot=null;
     this.staging='piano-walk';
     this.wanderTarget.set(SIT.x, 0, SIT.z);
     this.setVia(SIT.x, SIT.z);
@@ -771,20 +754,20 @@ export class SaphiraAvatar {
     a.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.35).play();
     this.wanderMode='walk';
   }
-  // pull out the phone right where she stands
-  private playTexting(){
-    if(!this.phoneReady || !!this.staging || this.busy || !this.acts.has('texting')) return;
-    if(this.wanderMode!=='none'){
-      (this.acts.get('wander') ?? this.acts.get('walk'))?.fadeOut(0.3);
-      this.wanderMode='none';
+  // cut a performance short (settings toggle flipped off mid-play)
+  stopPiano(){ this.endPiano(); }
+  private endPiano(){
+    if(this.pianoEndTimer){ window.clearTimeout(this.pianoEndTimer); this.pianoEndTimer=null; }
+    if(this.oneShot && this.oneShot.getClip().name.toLowerCase()==='piano'){
+      this.oneShot=null;
+      this.toBase(0.4);
       this.hasVia=false;
+      this.wanderTarget.set(SIT.x + 0.08, 0, SIT.z + 1.25);
+      const w=this.acts.get('wander') ?? this.acts.get('walk');
+      if(w){ w.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.4).play(); this.wanderMode='walk'; }
+      else this.wanderMode='turnBack';
     }
-    this.playOnce('texting');
-    // hands come up first — show the phone once they've settled, or it
-    // materializes inside her torso during the transition frames
-    if(this.phone) window.setTimeout(()=>{
-      if(this.oneShot===this.acts.get('texting') && this.phone) this.phone.visible=true;
-    }, 650);
+    this.staging='';
   }
 
   // Chat replies never trigger body-language clips: this set has no true
@@ -802,8 +785,7 @@ export class SaphiraAvatar {
   }
   // expose for UI debug / manual triggers
   playGest(name: string){
-    if(name==='piano'){ this.startPiano(); return; }
-    if(name==='texting'){ this.playTexting(); return; }
+    if(name==='piano'){ this.startPiano(true); return; }
     this.playOnce(name);
   }
   listGestures(){ return [...this.acts.keys()]; }
@@ -850,33 +832,6 @@ export class SaphiraAvatar {
     a.reset().setLoop(THREE.LoopOnce, 1);
     a.clampWhenFinished=true;
     a.fadeIn(0.25).play();
-  }
-
-  // per-frame phone bridge: while texting, the phone spans her two palms —
-  // recomputed from the live hand bones every frame, so it always reads as
-  // gripped no matter what the clip's hands are doing
-  private updatePhone(){
-    if(!this.phone || !this.phone.visible || !this.lhBone || !this.rhBone) return;
-    const lhw = this.lhBone.getWorldPosition(_ph1);
-    const rhw = this.rhBone.getWorldPosition(_ph2);
-    _phLong.subVectors(rhw, lhw);
-    if(_phLong.lengthSq() < 1e-6) return;
-    _phLong.normalize();
-    _phMid.addVectors(lhw, rhw).multiplyScalar(0.5);
-    _phMid.y -= 0.012;
-    // screen faces up, tilted a little toward her face
-    if(this.headBone) this.headBone.getWorldPosition(_ph1);
-    _phN.set(0,1,0).multiplyScalar(0.78).addScaledVector(_ph1.sub(_phMid).normalize(), 0.22).normalize();
-    _phN.addScaledVector(_phLong, -_phN.dot(_phLong)).normalize();
-    _phX.crossVectors(_phLong, _phN).normalize();
-    _phN.crossVectors(_phX, _phLong).normalize();
-    _phM.makeBasis(_phX, _phLong, _phN);
-    _phM.setPosition(_phMid);
-    const parent = this.phone.parent;
-    if(!parent) return;
-    parent.updateWorldMatrix(true, false);
-    _phRel.copy(parent.matrixWorld).invert().multiply(_phM);
-    _phRel.decompose(this.phone.position, this.phone.quaternion, _phS);
   }
 
   // procedural layer: head tracking, blinking, breathing — applied after the
@@ -985,7 +940,6 @@ export class SaphiraAvatar {
       this.lastLift = -1; // clamp inactive (bones missing) — visible in ?debug=1
     }
     this.applyLife(dt);
-    this.updatePhone();
     // wandering: walk to target, then turn back to face the user
     if(this.model && this.wanderMode!=='none'){
       const p=this.model.position;
@@ -1028,8 +982,13 @@ export class SaphiraAvatar {
         this.model.rotation.y = SIT.rotY;
         this.model.position.x = SIT.x; this.model.position.z = SIT.z;
         this.staging='piano-play';
+        // stretch the 9.5s clip into a ~15s performance (slower, dreamier
+        // playing — hidden by the camera shot anyway)
+        const pa=this.acts.get('piano');
+        if(pa){ pa.timeScale = 0.6355; }
         this.playOnce('piano');
         playPianoPhrase();
+        this.pianoEndTimer = window.setTimeout(()=> this.endPiano(), 15100);
       }
     }
     // smooth camera dolly, following her wherever she stands on the stage
