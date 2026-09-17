@@ -154,6 +154,7 @@ function renderApp(){
     <div class="stage">
       <canvas id="c" aria-label="Saphira canvas"></canvas>
       <button class="theme" id="themeBtn" aria-label="Toggle day / night">◐</button>
+      <button class="theme" id="fsBtn" aria-label="Fullscreen" style="display:none">⛶</button>
       <div class="dbg" id="dbg" style="display:none"></div>
       <div class="clock" id="clock" aria-label="Clock — click for timer & stopwatch"><span id="clockTime">--:--</span><span id="clockDate"></span></div>
       <div class="clockpanel" id="clockPanel" style="display:none">
@@ -597,6 +598,11 @@ async function handleUser(text:string){
     if(history.length>12) history=history.slice(-12);
     thinkEl.remove();
     addBubble('bot', reply.text);
+    // zoom + mouth loop start instantly while TTS PCM is still fetching
+    // (tts.speak also signals speaking before fetch, this is a backup)
+    // NOTE: setTalking cancels wandering — so the explicit dance/piano triggers
+    // run AFTER it, or the request would be cancelled before she starts walking
+    avatar?.setTalking(true);
     // dance/piano only on explicit request — never autonomous
     if(/danc|hip[\s-]?hop|disco|bhangra/i.test(text)) avatar?.playGest('wave');
     else if(/\bpiano\b|play (some |a |the )?(music|song|tune|melody|keys)|serenade/i.test(text)) avatar?.playGest('piano');
@@ -604,9 +610,6 @@ async function handleUser(text:string){
     else avatar?.setExpression(reply.expression, reply.intensity, reply.gesture);
     if(reply.tasks) applyTaskOps(reply.tasks);
     applyTimeOps(reply);
-    // zoom + mouth loop start instantly while TTS PCM is still fetching
-    // (tts.speak also signals speaking before fetch, this is a backup)
-    avatar?.setTalking(true);
     const heard=await tts.speak(reply.text);
     if(!heard){
       voiceWarn();

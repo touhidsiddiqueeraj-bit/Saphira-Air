@@ -737,7 +737,6 @@ export class SaphiraAvatar {
     if(!this.pianoReady || !!this.staging || !this.acts.has('piano')) return;
     if(!pianoOn()) return;                      // piano toggled off in settings
     if(!force && Date.now()-this.lastPiano < this.pianoEveryMs) return; // cooldown
-    this.lastPiano = Date.now();
     // she might be mid-yawn — brush it aside, the walk takes over
     this.oneShot?.fadeOut(0.3);
     this.oneShot=null;
@@ -979,6 +978,7 @@ export class SaphiraAvatar {
         this.model.rotation.y = SIT.rotY;
         this.model.position.x = SIT.x; this.model.position.z = SIT.z;
         this.staging='piano-play';
+        this.lastPiano = Date.now(); // cooldown counts from performance start
         // stretch the 9.5s clip into a ~30s performance (slow, dreamy
         // playing — hidden by the camera shot anyway)
         const pa=this.acts.get('piano');
