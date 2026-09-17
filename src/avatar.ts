@@ -759,13 +759,18 @@ export class SaphiraAvatar {
     if(this.oneShot && this.oneShot.getClip().name.toLowerCase()==='piano'){
       this.oneShot=null;
       this.toBase(0.4);
+      this.pianoRequested=false;
+      this.staging='';
       this.hasVia=false;
+      // step out from in front of the keys toward the user, clear of the prop
       this.wanderTarget.set(SIT.x + 0.08, 0, SIT.z + 1.25);
       const w=this.acts.get('wander') ?? this.acts.get('walk');
       if(w){ w.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.4).play(); this.wanderMode='walk'; }
       else this.wanderMode='turnBack';
+    } else {
+      this.staging='';
+      this.pianoRequested=false;
     }
-    this.staging='';
   }
 
   // Chat replies never trigger body-language clips: this set has no true
