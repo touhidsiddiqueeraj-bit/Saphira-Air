@@ -66,7 +66,7 @@ let masterGain: GainNode | null = null;
 function master(c: AudioContext): GainNode {
   if (!masterGain) {
     masterGain = c.createGain();
-    masterGain.gain.value = 0.14; // quiet under the room
+    masterGain.gain.value = 0.45; // clearly audible over the room (0.14 read as silent on the Air)
     masterGain.connect(c.destination);
   }
   return masterGain;

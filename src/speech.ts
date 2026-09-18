@@ -26,10 +26,16 @@ export class WakeListener {
 
   get isSupported(){
     const has = !!(window as any).SpeechRecognition || !!(window as any).webkitSpeechRecognition;
-    // ponytail: iOS Safari (all versions including iOS 12) never shipped SpeechRecognition
-    // so even if webkit prefix exists, it's a stub — sniff real support
     if(!has) return false;
-    try{ const ua=navigator.userAgent||''; if(/iPad|iPhone|iPod/.test(ua) && !/CriOS|Chrome/.test(ua)) return false; }catch{}
+    try{
+      const ua=navigator.userAgent||'';
+      if(/iPad|iPhone|iPod/.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua)){
+        // iPadOS 14.5+ ships a real Siri-backed recognizer; older iOS either
+        // lacks the API entirely or only a dead stub — gate on OS version
+        const m=/OS (\d+)[._](\d+)/.exec(ua);
+        if(m && (Number(m[1]) < 14 || (Number(m[1])===14 && Number(m[2])<5))) return false;
+      }
+    }catch{}
     return has;
   }
   get isListening(){ return this.running; }

@@ -256,7 +256,9 @@ function wire(){
   try{
     const fsBtn=document.getElementById('fsBtn') as HTMLButtonElement;
     const docAny=document.documentElement as any;
-    const fsSupported = !!(docAny.requestFullscreen || docAny.webkitRequestFullscreen) && !isLegacyIOS;
+    // feature-detect only — iPad Safari 12 has webkitRequestFullscreen and the
+    // old !isLegacyIOS clause was hiding the button exactly where it works
+    const fsSupported = !!(docAny.requestFullscreen || docAny.webkitRequestFullscreen);
     if(fsSupported){
       fsBtn.style.display='grid';
       fsBtn.addEventListener('click', ()=>{
@@ -356,10 +358,10 @@ function wire(){
   tts.setAiVoice(settings.aiVoice);
   gemini = new GeminiClient(()=> settings.apiKey, ()=> settings.persona, settings.rpmLimit);
 
-  // ponytail: on legacy iOS, wake word never fires — hint the user immediately
+  // ponytail: on legacy iOS, wake word never fires — route to typing instead
   if(isLegacyIOS && wakeEnabled){
     wakeEnabled=false; localStorage.setItem('saphira_mic_enabled','no');
-    setTimeout(()=> flashLive('Tap mic to talk — wake word not on this iPad'), 1200);
+    setTimeout(()=> flashLive('Type below — voice input needs iOS 14.5+'), 1200);
   }
   wake = new WakeListener({
     onWake:()=>{ flashLive(`“${settings.wakeWord}” ✓`); },
@@ -459,8 +461,10 @@ function wire(){
   });
   document.getElementById('micBtn')!.addEventListener('click', async()=>{
     if(!wake.isSupported){
+      // no speech recognition here (old iOS) — the mic becomes a shortcut to
+      // the text box, where the keyboard's dictation button still works
       (document.getElementById('chatInput') as HTMLInputElement).focus();
-      flashLive('Voice not supported here');
+      flashLive('Voice input needs iOS 14.5+ — type or use keyboard dictation');
       return;
     }
     try{

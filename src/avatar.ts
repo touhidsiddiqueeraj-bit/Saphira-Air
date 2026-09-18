@@ -7,7 +7,7 @@ export type Expression = 'neutral'|'happy'|'excited'|'sad'|'surprised'|'thinking
 export type Gesture = 'none'|'wave'|'nod'|'shrug'|'piano';
 export type Theme = 'auto'|'day'|'night';
 // bump on every push — shown in ?debug=1 overlay so screenshots prove the build
-export const BUILD = 'air-dbg13';
+export const BUILD = 'air-dbg14';
 
 // Renderer runs NoToneMapping + a soft light rig so on-screen colors match the
 // stylized flat materials she was authored with in Blender (clothes are unlit,
@@ -44,8 +44,6 @@ const PIANO_ROT = SIT.rotY + PIANO_REL.rotY;
 // face as she plays
 const PIANO_CAM_POS = new THREE.Vector3(SIT.x - 2.0, 1.62, SIT.z + 0.28);
 const PIANO_CAM_LOOK = new THREE.Vector3(SIT.x + 0.1, 1.42, SIT.z + 0.02);
-// wandering feet stay out of the piano corner
-const PIANO_KEEP = { x: -0.55, z: 0.0, r: 1.45 };
 // measured world footprint of the placed prop (+margin) — walk paths route
 // around this box instead of straight through it
 const PIANO_BOX = { minX: -1.75, maxX: 0.55, minZ: -1.0, maxZ: 1.25 };
@@ -705,22 +703,26 @@ export class SaphiraAvatar {
     if(!this.model || !this.acts.has('wander')) return;
     const p=this.model.position;
     let tx=0, tz=0, ok=false;
-    for(let tries=0; tries<10 && !ok; tries++){
-      if(Math.abs(p.x)>0.5 || Math.abs(p.z)>0.45){
-        // drifted far — cross to the opposite side for a long walk home
-        tx = (p.x>0?-1:1)*(0.6+Math.random()*0.45);
-      } else {
-        // pick a far edge so walks last 3-5s at 0.3 m/s
-        tx = (Math.random()<0.5?-1:1)*(0.65+Math.random()*0.4);
+    // first pass wants a proper stroll; the relaxed second pass just keeps
+    // her stepping when the crescent offers no far spot (mid-park position)
+    for(const minD of [0.5, 0.3]){
+      for(let tries=0; tries<8 && !ok; tries++){
+        // the grand owns the whole west half of the stage, so sample the free
+        // east crescent — the old ±x sampler rejected every target it picked
+        // (negative-x lands inside the piano box, and her spawn |x|>0.5 forced
+        // exactly that side), which is why she stood still forever
+        tx = 0.58 + Math.random()*0.45;
+        tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
+        // clamp onto the disc so she never steps off the edge
+        const tr = Math.hypot(tx, tz);
+        if(tr > WANDER_R){ tx *= WANDER_R/tr; tz *= WANDER_R/tr; }
+        if(inPianoBox(tx, tz)) continue;
+        if(Math.hypot(tx-p.x, tz-p.z) < minD) continue; // too close — the walk must read
+        ok = true;
       }
-      tz = WANDER_Z_MIN + Math.random()*(WANDER_Z_MAX-WANDER_Z_MIN);
-      if(Math.hypot(tx-p.x, tz-p.z) < 0.6) tx = -tx; // too close — go the other way
-      // clamp onto the disc so she never steps off the edge
-      const tr = Math.hypot(tx, tz);
-      if(tr > WANDER_R){ tx *= WANDER_R/tr; tz *= WANDER_R/tr; }
-      ok = !inPianoBox(tx, tz) && Math.hypot(tx-PIANO_KEEP.x, tz-PIANO_KEEP.z) >= PIANO_KEEP.r + 0.05;
+      if(ok) break;
     }
-    if(!ok) return; // piano hogs the good spots this round — stay put
+    if(!ok) return; // nowhere worth stepping this round — stay put
     this.wanderTarget.set(tx, 0, tz);
     this.setVia(tx, tz);
     const a=this.acts.get('wander') ?? this.acts.get('walk');
